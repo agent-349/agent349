@@ -1,0 +1,7 @@
+// Type-checks the runnable examples against the SDK sources (no emit).
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "declaration": false, "declarationMap": false },
+  "include": ["src/**/*", "examples/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

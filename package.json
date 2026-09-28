@@ -1,0 +1,119 @@
+{
+  "name": "agent349",
+  "version": "0.5.0",
+  "description": "Enterprise-grade AI agent orchestration for Node.js: build, run and govern production AI agents with built-in ACL, audit, human-in-the-loop, RAG and multi-provider LLMs.",
+  "keywords": [
+    "ai",
+    "agents",
+    "ai-agents",
+    "llm",
+    "orchestration",
+    "agent-framework",
+    "rag",
+    "tool-calling",
+    "mcp",
+    "governance",
+    "acl",
+    "audit",
+    "human-in-the-loop",
+    "anthropic",
+    "openai",
+    "gemini",
+    "ollama",
+    "typescript",
+    "nodejs"
+  ],
+  "homepage": "https://github.com/agent-349/agent349#readme",
+  "bugs": {
+    "url": "https://github.com/agent-349/agent349/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agent-349/agent349.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Gustavo Gretter",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run --reporter=verbose tests/unit",
+    "test:int": "vitest run --config vitest.integration.config.ts --reporter=verbose",
+    "test:vectorstores": "vitest run --config vitest.vectorstores.config.ts",
+    "test:cov": "vitest run --coverage",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "format": "prettier --write src tests examples scripts docs *.md",
+    "format:check": "prettier --check src tests examples scripts docs *.md",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "pack:check": "npm pack --dry-run",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "docs:check": "node scripts/check-docs.mjs",
+    "example:quickstart": "tsx examples/quickstart.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@google/genai": "^2.20.0",
+    "ajv": "^8.18.0",
+    "fast-xml-parser": "^5.11.1",
+    "mammoth": "^1.12.0",
+    "meilisearch": "^0.56.0",
+    "node-html-parser": "^7.1.0",
+    "openai": "^6.27.0",
+    "pdf-parse": "^2.4.5"
+  },
+  "optionalDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ioredis": "^5.10.1",
+    "mongodb": "^6.21.0",
+    "mssql": "^11.0.1",
+    "mysql2": "^3.15.3",
+    "oracledb": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.23.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "pg": "^8.23.0",
+    "prettier": "^3.3.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
