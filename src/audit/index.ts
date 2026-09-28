@@ -1,0 +1,21 @@
+// Audit module: Logger, Store, Export, SIEM
+export type * from './types.js';
+export { AuditLogger } from './AuditLogger.js';
+export type { AuditConfig, AuditBufferConfig } from './AuditLogger.js';
+export { AuditWriteBuffer } from './AuditWriteBuffer.js';
+export type { AuditWriteBufferConfig } from './AuditWriteBuffer.js';
+export { EventCollector } from './EventCollector.js';
+export { IntegrityHash } from './IntegrityHash.js';
+export { SensitiveDataGuard } from './SensitiveDataGuard.js';
+export type { RedactPattern, SensitiveDataGuardConfig } from './SensitiveDataGuard.js';
+export { AuditStoreAdapter } from './store/AuditStoreAdapter.js';
+export { InMemoryAuditStore } from './store/InMemoryAuditStore.js';
+export { MongoAuditStore } from './store/MongoAuditStore.js';
+export type { MongoAuditStoreConfig } from './store/MongoAuditStore.js';
+export { createAuditStore } from './store/createAuditStore.js';
+export { SIEMForwarder } from './siem/SIEMForwarder.js';
+export { WebhookSIEMForwarder } from './siem/WebhookSIEMForwarder.js';
+export type { WebhookSIEMForwarderConfig } from './siem/WebhookSIEMForwarder.js';
+export { createSIEMForwarder } from './siem/createSIEMForwarder.js';
+export { toCEF, toLEEF, formatRecords } from './siem/formatters.js';
+export type { SIEMFormat } from './siem/formatters.js';

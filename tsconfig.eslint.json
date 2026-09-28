@@ -1,0 +1,8 @@
+// Type-aware linting needs every file ESLint touches to belong to a TS project.
+// The build tsconfig deliberately excludes `tests/` (they must not ship in
+// `dist/`), so linting uses this superset instead.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "tests/**/*", "*.config.ts", "*.config.js"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,7 @@
+dist/
+coverage/
+node_modules/
+package-lock.json
+# Reference material kept verbatim
+docs/es/
+CODE_OF_CONDUCT.md

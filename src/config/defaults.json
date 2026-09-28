@@ -1,0 +1,161 @@
+{
+  "storage": {
+    "backends": {
+      "memory": {
+        "type": "memory"
+      }
+    }
+  },
+  "llm": {
+    "defaultProvider": "claude",
+    "providers": {
+      "claude": {
+        "apiKey": "${ANTHROPIC_API_KEY}",
+        "defaultModel": "claude-opus-5",
+        "maxRetries": 2,
+        "timeoutMs": 30000
+      },
+      "openai": {
+        "apiKey": "${OPENAI_API_KEY}",
+        "defaultModel": "gpt-6-sol",
+        "maxRetries": 2,
+        "timeoutMs": 30000
+      },
+      "gemini": {
+        "type": "gemini",
+        "apiKey": "${GEMINI_API_KEY}",
+        "defaultModel": "gemini-3.8-flash",
+        "timeoutMs": 60000
+      },
+      "ollama": {
+        "baseUrl": "http://localhost:11434",
+        "defaultModel": "llama3",
+        "timeoutMs": 60000
+      }
+    },
+    "circuitBreaker": {
+      "failureThreshold": 3,
+      "recoveryTimeMs": 60000
+    }
+  },
+  "memory": {
+    "session": {
+      "backend": "memory",
+      "strategy": "sliding_window",
+      "ttlSeconds": 3600,
+      "maxMessagesBeforeCompress": 20,
+      "mediaPersistence": "omit"
+    },
+    "longTerm": {
+      "backend": "memory",
+      "maxFactsPerUser": 50
+    }
+  },
+  "session": {
+    "backend": "memory"
+  },
+  "tools": {
+    "defaultTimeoutMs": 10000,
+    "maxRetries": 2,
+    "retryBackoffMs": 1000,
+    "defaultLimits": {
+      "maxRows": 200,
+      "maxBytes": 131072,
+      "timeoutMs": 15000
+    }
+  },
+  "agent": {
+    "maxLoopIterations": 10,
+    "defaultTemperature": 0.1,
+    "defaultMaxTokens": 4096
+  },
+  "tokens": {
+    "backend": "memory",
+    "limitMode": "observe",
+    "limits": {
+      "perTenant": {
+        "daily": 1000000,
+        "monthly": 20000000
+      },
+      "perUser": {
+        "daily": 50000,
+        "monthly": 1000000
+      }
+    },
+    "pricing": {
+      "claude-opus-5": {
+        "input": 0.005,
+        "output": 0.025
+      },
+      "gpt-6-sol": {
+        "input": 0.002,
+        "output": 0.01
+      }
+    }
+  },
+  "logging": {
+    "level": "info",
+    "includeTokenUsage": true,
+    "adapter": "noop",
+    "format": "json",
+    "includeData": true
+  },
+  "audit": {
+    "enabled": false,
+    "verbosity": "standard",
+    "buffer": {
+      "maxSize": 100,
+      "flushIntervalMs": 5000
+    },
+    "retention": {
+      "default": 90,
+      "security": 365
+    },
+    "sensitiveData": {
+      "enabled": true,
+      "globalRedactFields": ["password", "token", "apiKey", "secret", "ssn"]
+    },
+    "store": {
+      "type": "memory"
+    },
+    "siem": {
+      "type": "none"
+    }
+  },
+  "rag": {
+    "vectorStore": {
+      "adapter": "in-memory",
+      "meilisearch": {
+        "url": "http://localhost:7700",
+        "apiKey": "${MEILI_API_KEY}",
+        "requestTimeout": 10000
+      }
+    },
+    "embedding": {
+      "defaultProvider": "openai",
+      "defaultModel": "text-embedding-3-small",
+      "defaultDimensions": 1536,
+      "providers": {
+        "openai": {
+          "apiKey": "${OPENAI_API_KEY}"
+        },
+        "cohere": {
+          "apiKey": "${COHERE_API_KEY}"
+        },
+        "ollama": {
+          "baseUrl": "${OLLAMA_BASE_URL}"
+        }
+      }
+    },
+    "retrieval": {
+      "topK": 10,
+      "finalTopK": 5,
+      "hybridAlpha": 0.7,
+      "searchMode": "hybrid",
+      "minScore": 0,
+      "rerank": false,
+      "rerankPolicy": "require",
+      "rrfK": 60
+    }
+  }
+}

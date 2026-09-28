@@ -1,0 +1,48 @@
+name: Vector stores
+
+# Runs the vector store contract against real engines (pgvector, Qdrant,
+# Weaviate, Milvus, Pinecone Local, Meilisearch) when adapter code changes.
+on:
+  pull_request:
+    paths:
+      - 'src/rag/**'
+      - 'tests/fixtures/vectorStoreContract.ts'
+      - 'tests/integration/vectorstores*'
+      - 'vitest.vectorstores.config.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Start engines
+        run: docker compose -f tests/integration/vectorstores.compose.yml up -d
+      - name: Wait for engines
+        run: |
+          wait_for() {
+            for i in $(seq 1 90); do
+              if eval "$2" >/dev/null 2>&1; then echo "$1 ready"; return 0; fi
+              sleep 2
+            done
+            echo "$1 did not start"; docker compose -f tests/integration/vectorstores.compose.yml logs "$1"; return 1
+          }
+          wait_for pgvector "docker compose -f tests/integration/vectorstores.compose.yml exec -T pgvector pg_isready -U agent349"
+          wait_for qdrant "curl -sf http://localhost:6333/readyz"
+          wait_for weaviate "curl -sf http://localhost:8089/v1/.well-known/ready"
+          wait_for milvus "curl -sf http://localhost:9091/healthz"
+          wait_for pinecone "curl -sf http://localhost:5080/indexes -H 'X-Pinecone-API-Version: 2025-01'"
+          wait_for meilisearch "curl -sf http://localhost:7701/health"
+      - run: npm run test:vectorstores
+      - name: Stop engines
+        if: always()
+        run: docker compose -f tests/integration/vectorstores.compose.yml down -v
