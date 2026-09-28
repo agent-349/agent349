@@ -97,7 +97,7 @@
     "ioredis": "^5.10.1",
     "mongodb": "^6.21.0",
     "mssql": "^11.0.1",
-    "mysql2": "^3.15.3",
+    "mysql2": "^3.24.4",
     "oracledb": "^6.9.0"
   },
   "devDependencies": {
