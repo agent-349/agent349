@@ -34,7 +34,16 @@ export interface GuardedRequestOptions {
   followRedirects?: boolean;
   /** Redirect hops allowed when following. */
   maxRedirects?: number;
+  /**
+   * Headers that carry a secret (the credential's header, e.g. an API key).
+   * Like `authorization`, `proxy-authorization` and `cookie`, they are dropped
+   * when a redirect leaves the original origin.
+   */
+  sensitiveHeaders?: string[];
 }
+
+/** Headers never forwarded to another origin. */
+const ALWAYS_SENSITIVE = ['authorization', 'proxy-authorization', 'cookie'];
 
 /** What an outbound request returned. */
 export interface GuardedResponse {
@@ -91,7 +100,8 @@ export type RequestPerformer = (
  *    connection. It is the step most implementations skip, and skipping it
  *    makes the other four decorative.
  * 5. **Per-hop revalidation** — a redirect is a brand new destination and gets
- *    the whole chain again.
+ *    the whole chain again. A hop to another origin drops the credentials
+ *    (`authorization`, `proxy-authorization`, `cookie` and `sensitiveHeaders`).
  * 6. **Streaming cap** — the body is cut while it arrives, so an enormous
  *    response is never fully downloaded.
  *
@@ -110,6 +120,7 @@ export async function guardedRequest(
   let current = options.url;
   let body = options.body;
   let method = options.method;
+  let headers = { ...(options.headers ?? {}) };
 
   for (let hop = 0; ; hop += 1) {
     const url = parseUrl(current);
@@ -119,7 +130,7 @@ export async function guardedRequest(
 
     const response = await performer(url, {
       method,
-      headers: options.headers ?? {},
+      headers,
       body,
       timeoutMs: options.timeoutMs,
       maxBytes: options.maxBytes,
@@ -139,7 +150,20 @@ export async function guardedRequest(
       };
     }
 
-    current = new URL(location, url).toString();
+    const next = new URL(location, url);
+    if (next.origin !== url.origin) {
+      // Credentials were issued for the original origin; another host (or the
+      // same one over plain http) must not receive them.
+      const sensitive = new Set(
+        [...ALWAYS_SENSITIVE, ...(options.sensitiveHeaders ?? [])].map((name) =>
+          name.toLowerCase(),
+        ),
+      );
+      headers = Object.fromEntries(
+        Object.entries(headers).filter(([name]) => !sensitive.has(name.toLowerCase())),
+      );
+    }
+    current = next.toString();
     // A redirected request carries no body, and 303 (plus the de-facto
     // behaviour of 301/302) turns it into a GET.
     body = undefined;

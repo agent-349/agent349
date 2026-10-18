@@ -3,7 +3,8 @@ import type { ConnectionConfig, SqlConnectionConfig } from '../../../connections
 import type { Credential } from '../../../credentials/types.js';
 import { OracleDialect } from './dialects.js';
 import type { SqlDialect } from './dialects.js';
-import { SqlDriver } from './SqlDriver.js';
+import { normalizeZonelessColumns, SqlDriver } from './SqlDriver.js';
+import type { ZonelessKind } from './SqlDriver.js';
 import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,8 +14,14 @@ import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 /** The part of an `oracledb` result this driver reads. */
 interface OracleResult {
   rows?: Record<string, unknown>[];
-  metaData?: { name: string }[];
+  metaData?: { name: string; dbTypeName?: string }[];
 }
+
+/** Oracle `DATE` carries a time of day; both are built by `oracledb` from the local clock. */
+const ORACLE_ZONELESS = new Map<string, ZonelessKind>([
+  ['DATE', 'datetime'],
+  ['TIMESTAMP', 'datetime'],
+]);
 
 /** The part of an `oracledb` connection this driver touches. */
 interface OracleConnection {
@@ -127,8 +134,16 @@ export class OracleDriver extends SqlDriver {
 
       await connection.execute(guards.after);
 
+      const rows = result.rows ?? [];
+      const zoneless = new Map<string, ZonelessKind>();
+      for (const field of result.metaData ?? []) {
+        const kind = ORACLE_ZONELESS.get(field.dbTypeName ?? '');
+        if (kind !== undefined) zoneless.set(field.name, kind);
+      }
+      normalizeZonelessColumns(rows, zoneless, { kind: 'local' });
+
       return {
-        rows: result.rows ?? [],
+        rows,
         fields: (result.metaData ?? []).map((field) => field.name),
       };
     } finally {

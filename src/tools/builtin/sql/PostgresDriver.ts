@@ -3,7 +3,8 @@ import type { ConnectionConfig, SqlConnectionConfig } from '../../../connections
 import type { Credential } from '../../../credentials/types.js';
 import { PostgresDialect } from './dialects.js';
 import type { SqlDialect } from './dialects.js';
-import { SqlDriver } from './SqlDriver.js';
+import { normalizeZonelessColumns, SqlDriver } from './SqlDriver.js';
+import type { ZonelessKind } from './SqlDriver.js';
 import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,8 +26,14 @@ interface PgPool {
 /** The part of a `pg` result this driver reads. */
 interface PgResult {
   rows?: Record<string, unknown>[];
-  fields?: { name: string }[];
+  fields?: { name: string; dataTypeID?: number }[];
 }
+
+/** `timestamp` and `date` OIDs: no time zone, parsed by `pg` from the local clock. */
+const PG_ZONELESS = new Map<number, ZonelessKind>([
+  [1114, 'datetime'],
+  [1082, 'date'],
+]);
 
 /** Whether `value` looks like a `pg.Pool` — enough to accept an injected one. */
 function isPgPool(value: unknown): value is PgPool {
@@ -135,8 +142,16 @@ export class PostgresDriver extends SqlDriver {
 
       await client.query(guards.after);
 
+      const rows = result.rows ?? [];
+      const zoneless = new Map<string, ZonelessKind>();
+      for (const field of result.fields ?? []) {
+        const kind = field.dataTypeID === undefined ? undefined : PG_ZONELESS.get(field.dataTypeID);
+        if (kind !== undefined) zoneless.set(field.name, kind);
+      }
+      normalizeZonelessColumns(rows, zoneless, { kind: 'local' });
+
       return {
-        rows: result.rows ?? [],
+        rows,
         fields: (result.fields ?? []).map((field) => field.name),
       };
     } finally {
@@ -152,7 +167,8 @@ function buildPoolOptions(
 ): Record<string, unknown> {
   const options: Record<string, unknown> = {};
 
-  if (config.url !== undefined) options['connectionString'] = config.url;
+  if (config.url !== undefined)
+    options['connectionString'] = withUrlCredential(config.url, credential);
   if (config.host !== undefined) options['host'] = config.host;
   if (config.port !== undefined) options['port'] = config.port;
   if (config.database !== undefined) options['database'] = config.database;
@@ -215,4 +231,23 @@ async function importPg(): Promise<PgModule> {
       { cause: err instanceof Error ? err : undefined },
     );
   }
+}
+
+/**
+ * Puts a `basic` credential into the connection URL when the URL has none.
+ * `pg` lays the fields parsed from `connectionString` over the explicit
+ * options, so a URL without a password erased the credential's
+ * (`client password must be a string`).
+ */
+function withUrlCredential(url: string, credential: Credential): string {
+  if (credential.kind !== 'basic') return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url; // a keyword/value string: pg reads user and password from the options
+  }
+  if (parsed.username === '') parsed.username = encodeURIComponent(credential.username);
+  if (parsed.password === '') parsed.password = encodeURIComponent(credential.password);
+  return parsed.toString();
 }

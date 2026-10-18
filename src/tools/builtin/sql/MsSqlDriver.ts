@@ -3,7 +3,8 @@ import type { ConnectionConfig, SqlConnectionConfig } from '../../../connections
 import type { Credential } from '../../../credentials/types.js';
 import { MsSqlDialect } from './dialects.js';
 import type { SqlDialect } from './dialects.js';
-import { SqlDriver } from './SqlDriver.js';
+import { normalizeZonelessColumns, SqlDriver } from './SqlDriver.js';
+import type { DriverClock, ZonelessKind } from './SqlDriver.js';
 import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +147,7 @@ export class MsSqlDriver extends SqlDriver {
       await transaction.request().query(guards.after);
 
       const rows = result.recordset ?? result.recordsets?.[0] ?? [];
+      normalizeZonelessColumns(rows, zonelessColumns(result), mssqlClock(resource));
       return {
         rows,
         // `mssql` exposes column order on the recordset itself; falling back to
@@ -166,6 +168,34 @@ function columnsOf(result: MsSqlResult, rows: Record<string, unknown>[]): string
     ?.columns;
   if (meta !== undefined) return Object.keys(meta);
   return rows.length > 0 ? Object.keys(rows[0] as Record<string, unknown>) : [];
+}
+
+const MSSQL_ZONELESS = new Map<string, ZonelessKind>([
+  ['datetime2', 'datetime'],
+  ['datetime', 'datetime'],
+  ['smalldatetime', 'datetime'],
+  ['date', 'date'],
+]);
+
+/** Zoneless columns of a result, from `recordset.columns[name].type.declaration`. */
+function zonelessColumns(result: MsSqlResult): Map<string, ZonelessKind> {
+  const meta = (
+    result.recordset as unknown as
+      | { columns?: Record<string, { type?: { declaration?: string } }> }
+      | undefined
+  )?.columns;
+  const zoneless = new Map<string, ZonelessKind>();
+  for (const [name, column] of Object.entries(meta ?? {})) {
+    const kind = MSSQL_ZONELESS.get(column.type?.declaration ?? '');
+    if (kind !== undefined) zoneless.set(name, kind);
+  }
+  return zoneless;
+}
+
+/** `mssql` builds zoneless dates as UTC unless the pool sets `options.useUTC: false`. */
+function mssqlClock(pool: unknown): DriverClock {
+  const useUTC = (pool as { config?: { options?: { useUTC?: unknown } } }).config?.options?.useUTC;
+  return useUTC === false ? { kind: 'local' } : { kind: 'offset', minutes: 0 };
 }
 
 /** Pool options assembled from the declaration and the resolved credential. */

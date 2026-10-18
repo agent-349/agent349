@@ -3,7 +3,8 @@ import type { ConnectionConfig, SqlConnectionConfig } from '../../../connections
 import type { Credential } from '../../../credentials/types.js';
 import { MySqlDialect } from './dialects.js';
 import type { SqlDialect } from './dialects.js';
-import { SqlDriver } from './SqlDriver.js';
+import { mysqlClock, normalizeZonelessColumns, SqlDriver } from './SqlDriver.js';
+import type { ZonelessKind } from './SqlDriver.js';
 import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,7 +14,16 @@ import type { SqlQueryRequest, SqlQueryResult } from './SqlDriver.js';
 /** The part of a `mysql2` field descriptor this driver reads. */
 interface MySqlField {
   name: string;
+  /** Protocol type code: 12 DATETIME, 10 DATE, 14 NEWDATE (7 TIMESTAMP is an instant). */
+  columnType?: number;
+  type?: number;
 }
+
+const MYSQL_ZONELESS = new Map<number, ZonelessKind>([
+  [12, 'datetime'],
+  [10, 'date'],
+  [14, 'date'],
+]);
 
 /** The part of a pooled `mysql2` connection this driver touches. */
 interface MySqlConnection {
@@ -151,11 +161,20 @@ export class MySqlDriver extends SqlDriver {
 
       await connection.query(guards.after);
 
+      // A non-SELECT would return an OkPacket rather than an array. The
+      // guards make that unreachable, and an empty result is a truthful
+      // answer if it ever happens.
+      const records = Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+      const zoneless = new Map<string, ZonelessKind>();
+      for (const field of fields ?? []) {
+        const code = field.columnType ?? field.type;
+        const kind = code === undefined ? undefined : MYSQL_ZONELESS.get(code);
+        if (kind !== undefined) zoneless.set(field.name, kind);
+      }
+      normalizeZonelessColumns(records, zoneless, mysqlClock(timezoneOf(resource)));
+
       return {
-        // A non-SELECT would return an OkPacket rather than an array. The
-        // guards make that unreachable, and an empty result is a truthful
-        // answer if it ever happens.
-        rows: Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [],
+        rows: records,
         fields: (fields ?? []).map((field) => field.name),
       };
     } finally {
@@ -236,4 +255,11 @@ async function importMySql(driverName: string): Promise<MySqlModule> {
       { cause: err instanceof Error ? err : undefined },
     );
   }
+}
+
+/** The `timezone` option of a `mysql2` pool (`'local'` when not set or not readable). */
+function timezoneOf(pool: unknown): unknown {
+  const config = (pool as { pool?: { config?: { connectionConfig?: { timezone?: unknown } } } })
+    .pool?.config;
+  return config?.connectionConfig?.timezone ?? 'local';
 }

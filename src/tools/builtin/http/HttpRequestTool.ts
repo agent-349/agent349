@@ -186,6 +186,7 @@ export function createHttpRequestTool(
           blockPrivateAddresses: connection.blockPrivateAddresses === true,
           followRedirects: connection.followRedirects ?? false,
           ...(connection.maxRedirects !== undefined && { maxRedirects: connection.maxRedirects }),
+          ...(credential.kind === 'apiKey' && { sensitiveHeaders: [credential.header] }),
         },
         config.transport,
       );

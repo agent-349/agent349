@@ -127,7 +127,10 @@ as bound parameters, never interpolated into the SQL.
 against an allowlist of relations. Each statement runs inside a **read-only
 transaction** with a statement timeout, so the database engine itself rejects
 writes. On SQL Server, which has no read-only transactions, the transaction is
-always rolled back instead: a write is undone, not prevented.
+always rolled back instead: a write is undone, not prevented. On Oracle, a
+function declared with `PRAGMA AUTONOMOUS_TRANSACTION` commits in its own
+transaction, so the read-only one does not stop it. On both engines the grants
+of the connection's user are the real guarantee.
 
 On top of that, syntactic guards check for a single statement, a read prefix,
 forbidden keywords (including `SELECT … INTO`) and the relation allowlist.

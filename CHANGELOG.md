@@ -6,6 +6,51 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+### Security
+
+- **SSRF: IPv6 literals carrying a private IPv4 address were treated as
+  public.** `isPrivateAddress` matched the IPv4-mapped form only when written
+  with dots, but `new URL()` normalises `[::ffff:169.254.169.254]` to
+  `::ffff:a9fe:a9fe`, so `http://[::ffff:169.254.169.254]/` reached the cloud
+  metadata endpoint and `http://[::ffff:127.0.0.1]/` loopback, with
+  `blockPrivateAddresses` on. IPv6 addresses are now judged on their 16 bytes:
+  IPv4-mapped and -compatible, 6to4 and NAT64 (`64:ff9b::/96`) addresses are
+  judged as the IPv4 address they carry, Teredo (`2001::/32`) and site-local
+  (`fec0::/10`) are refused, and malformed literals are refused.
+- **Credentials are no longer forwarded on cross-origin redirects.** With
+  `followRedirects`, every hop carried the original headers, so a redirect to
+  another host (or to plain `http`) received the connection's `authorization`
+  header or API key. A hop to another origin now drops `authorization`,
+  `proxy-authorization`, `cookie` and the header of an `apiKey` credential
+  (new `sensitiveHeaders` option of `guardedRequest`).
+- **CEF/LEEF lines can no longer be forged through record values.** CEF header
+  fields (the action) now escape `\` and `|`, extension values escape `=` and
+  write CR/LF as `\r`/`\n` (the outcome is escaped too); LEEF replaces `|` in
+  the header with `_` and tabs or line breaks in values with spaces. Before, a
+  user id with a tab or an action with `|` or a newline could add fields or a
+  whole forged record in the SIEM. The output matches the Java SDK.
+
+### Fixed
+
+- **`sql.query` no longer shifts date-time values that have no time zone.** A
+  `TIMESTAMP` (PostgreSQL, Oracle), `DATETIME` (MySQL) or Oracle `DATE`
+  storing 03:04 reached the model as `…T06:04:05.000Z` from a process in UTC-3,
+  and a `DATE` as a shifted instant. Zoneless columns are now returned as
+  stored (`2026-01-02T03:04:05`, `2026-01-02`), for SDK-opened and injected
+  pools alike; SQL Server `DATETIME2`/`DATE` lose their misleading `Z`. Zoned
+  types are unchanged (UTC instants).
+- **PostgreSQL connections declared with `url` and a `basic` credential
+  connect.** `pg` lays the fields parsed from `connectionString` over the
+  explicit options, so a URL without a password erased the credential's
+  (`client password must be a string`); the credential now goes into the URL
+  when it has none.
+
+### Documentation
+
+- `TOOLS_MANUAL`: an Oracle function with `PRAGMA AUTONOMOUS_TRANSACTION` writes
+  despite the read-only transaction (only grants stop it), date-time handling,
+  and the redirect and IPv6 rules.
+
 ## [0.5.0] - Unreleased
 
 First public release under the name **Agent349**.

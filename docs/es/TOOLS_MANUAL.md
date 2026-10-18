@@ -477,9 +477,9 @@ variante suya.
 |---|---|---|
 | 1 | Esquema | Todo lo que no sea `http`/`https`: `file:`, `data:`, `gopher:` |
 | 2 | `allowedDomains` | Dominios fuera de la lista (comodín `*.dominio` soportado) |
-| 3 | Validación de **todas** las IPs resueltas | Rangos privados, loopback, link-local — incluido `169.254.169.254` — y equivalentes IPv6, incluidas formas IPv4-mapped y 6to4 |
+| 3 | Validación de **todas** las IPs resueltas | Rangos privados, loopback, link-local — incluido `169.254.169.254` — y equivalentes IPv6. Las IPv6 que llevan una IPv4 (IPv4-mapped y compatibles, 6to4, NAT64 `64:ff9b::/96`) se juzgan como esa IPv4 sobre los 16 bytes, en cualquier forma de escritura (`::ffff:a9fe:a9fe` es `169.254.169.254`); Teredo (`2001::/32`) se rechaza siempre |
 | 4 | **Conexión a la IP ya validada** | DNS rebinding |
-| 5 | Revalidación por salto | Una redirección hacia un host interno |
+| 5 | Revalidación por salto | Una redirección hacia un host interno. Si el salto cambia de origen (host, puerto o de `https` a `http`), se descartan `authorization`, `proxy-authorization`, `cookie` y la cabecera de una credencial `apiKey` |
 | 6 | Corte en streaming | Una respuesta deliberadamente enorme |
 
 El control 4 es el que la mayoría omite, y sin él los otros cinco son
@@ -826,6 +826,23 @@ existe. En este motor **los permisos del usuario cargan el peso** que el motor
 carga en los demás: `readOnlyUser: true` merece verificarse contra los permisos
 reales, no declararse.
 
+**En Oracle, una función con `PRAGMA AUTONOMOUS_TRANSACTION` escribe aunque la
+transacción sea de solo lectura.** Corre en su propia transacción y hace su
+propio `COMMIT`, así que `SELECT f() FROM dual` puede modificar datos sin que
+`SET TRANSACTION READ ONLY` lo impida (verificado contra Oracle 23ai). Una
+función que escribe sin transacción autónoma sí falla (`ORA-14551`). La
+defensa es la misma que en SQL Server: el usuario de la conexión no debe tener
+permisos de escritura ni `EXECUTE` sobre funciones así.
+
+**Fechas sin zona horaria.** `TIMESTAMP`/`DATE` (PostgreSQL, Oracle),
+`DATETIME`/`DATE` (MySQL) y `DATETIME2`/`DATETIME`/`DATE` (SQL Server) se
+devuelven como están guardadas (`2026-01-02T03:04:05`, `2026-01-02`; el `DATE`
+de Oracle incluye la hora). Los drivers las convierten en `Date` con el reloj
+del proceso (o en UTC, `mssql`), y el SDK las vuelve a escribir con ese mismo
+reloj, también en los pools inyectados. Los tipos con zona (`timestamptz`,
+`TIMESTAMP WITH TIME ZONE`, `DATETIMEOFFSET`, el `TIMESTAMP` de MySQL) siguen
+llegando como instante UTC.
+
 Para otro motor, se extiende `SqlDriver` (que agrega `query()` y un `dialect` a
 `ConnectionDriver`). El dialecto solo sabe deletrear tres cosas: marcadores de
 parámetros, tope de filas y guardas de sesión.
@@ -900,6 +917,8 @@ no interrumpe el loop. Construir política sobre esos eventos es del host.
 
 - [ ] La conexión apunta a un usuario de base **de solo lectura**, con permisos
       acotados a las relaciones expuestas. Es la garantía real, no las guardas.
+- [ ] En Oracle, ese usuario no tiene `EXECUTE` sobre funciones con
+      `PRAGMA AUTONOMOUS_TRANSACTION` que escriban.
 - [ ] `readOnlyUser: true` declarado, y sin `security.sql.unrestricted` al
       arrancar.
 - [ ] Se exponen **vistas curadas** con descripciones, no tablas crudas.
