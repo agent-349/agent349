@@ -1936,6 +1936,8 @@ export class Orchestrator {
       this.#toolServicesCache = {
         getRAGPipeline: (): RAGPipeline => this.rag.pipeline,
         ragRetrievalDefaults: this.#config.rag.retrieval,
+        loadConversationHistory: (context): Promise<LLMMessage[]> =>
+          this.#memory.load(context.sessionId),
         getConnection: (name): ConnectionHandle => this.connections.get(name),
         getCredential: (ref, context): Promise<Credential> => {
           const provider = this.#credentialProvider ?? new ConfigCredentialProvider();
@@ -2206,7 +2208,9 @@ export class Orchestrator {
     // Auto-register the rag.search tool with retrieval defaults from config,
     // unless one is already present (declared in config or registered in code).
     if (!this.#toolRegistry.has('rag.search')) {
-      const ragTool = createRAGTool(ragPipeline, ['default'], ragCfg.retrieval);
+      const ragTool = createRAGTool(ragPipeline, ['default'], ragCfg.retrieval, {
+        conversationHistory: (context) => this.#memory.load(context.sessionId),
+      });
       this.#toolRegistry.register(ragTool);
     }
 
@@ -2369,12 +2373,17 @@ export class Orchestrator {
     const model = qrCfg.model ?? this.#config.llm.defaultModel ?? 'claude-haiku-4-5';
     const provider = qrCfg.llmProvider ?? this.#config.llm.defaultProvider ?? 'claude';
 
+    const options = {
+      eventBus: this.#bus,
+      ...(qrCfg.reasoningEffort !== undefined && { reasoningEffort: qrCfg.reasoningEffort }),
+    };
+
     if (qrCfg.strategy === 'contextual') {
-      return new ContextualRewriter(this.#router, provider, model);
+      return new ContextualRewriter(this.#router, provider, model, undefined, options);
     }
 
     if (qrCfg.strategy === 'hyde') {
-      return new HyDERewriter(this.#router, provider, model);
+      return new HyDERewriter(this.#router, provider, model, options);
     }
 
     return undefined;

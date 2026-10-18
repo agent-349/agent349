@@ -194,16 +194,39 @@ export class LLMReranker extends RerankerProvider {
     };
   }
 
-  /** Returns `true` if the underlying LLM provider is reachable (circuit closed). */
+  /**
+   * Scores one probe passage exactly as {@link rerank} would — same prompt,
+   * reasoning effort and token budget — and succeeds only when the reply
+   * parses as a score.
+   *
+   * A bare reachability call is not enough: a reasoning model (e.g.
+   * `gpt-5-nano`) given a tiny budget and no reasoning effort spends it all on
+   * reasoning and returns an empty reply, which the old probe reported as
+   * available while proving nothing about the model's ability to score.
+   */
   override async validate(): Promise<ProviderProbe> {
     try {
-      const req: LLMRequest = {
-        model: this.#model,
-        systemPrompt: 'Reply with: [1.0]',
-        messages: [{ role: 'user', content: 'test' }],
-        maxTokens: 16,
+      const probe: Passage = {
+        id: 'probe',
+        content: 'The Pro plan costs 20 dollars per user per month.',
+        score: 1,
+        collection: 'probe',
+        metadata: { documentId: 'probe' },
       };
-      await this.#router.call(req, this.#provider);
+      const response = await this.#router.call(
+        this.#scoringRequest('How much does the Pro plan cost?', [probe]),
+        this.#provider,
+      );
+      if (LLMReranker.#tryParseScores(response.content, 1) === undefined) {
+        return {
+          ok: false,
+          error:
+            `model '${this.#model}' did not return a score` +
+            (response.stopReason === 'max_tokens'
+              ? ' (the reply hit the token limit; raise rag.reranker.maxTokens or lower reasoningEffort)'
+              : `: ${JSON.stringify(response.content.slice(0, 80))}`),
+        };
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -218,6 +241,15 @@ export class LLMReranker extends RerankerProvider {
     query: string,
     batch: Passage[],
   ): Promise<{ scores: number[]; tokensUsed: number }> {
+    const response = await this.#router.call(this.#scoringRequest(query, batch), this.#provider);
+    const tokensUsed = response.usage.inputTokens + response.usage.outputTokens;
+    const scores = this.#parseScores(response.content, batch.length);
+
+    return { scores, tokensUsed };
+  }
+
+  /** The scoring request for one batch, shared by {@link rerank} and {@link validate}. */
+  #scoringRequest(query: string, batch: Passage[]): LLMRequest {
     const passageList = batch.map((p, i) => `[${i + 1}] ${this.scoringText(p)}`).join('\n\n');
 
     const userContent =
@@ -226,7 +258,7 @@ export class LLMReranker extends RerankerProvider {
       passageList +
       `\n\nReply with ONLY a JSON array of ${batch.length} numbers from 0.0 to 1.0.`;
 
-    const request: LLMRequest = {
+    return {
       model: this.#model,
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
@@ -234,12 +266,23 @@ export class LLMReranker extends RerankerProvider {
       maxTokens: this.#maxTokens ?? batch.length * TOKENS_PER_PASSAGE + DEFAULT_TOKEN_HEADROOM,
       ...(this.#reasoningEffort !== undefined && { reasoningEffort: this.#reasoningEffort }),
     };
+  }
 
-    const response = await this.#router.call(request, this.#provider);
-    const tokensUsed = response.usage.inputTokens + response.usage.outputTokens;
-    const scores = this.#parseScores(response.content, batch.length);
-
-    return { scores, tokensUsed };
+  /** The first JSON number array in `text`, padded or truncated to `expectedLength`; `undefined` if none. */
+  static #tryParseScores(text: string, expectedLength: number): number[] | undefined {
+    const match = text.match(/\[[\s\d.,]+\]/);
+    if (!match) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(match[0]);
+      if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'number')) {
+        const scores = parsed;
+        while (scores.length < expectedLength) scores.push(0);
+        return scores.slice(0, expectedLength);
+      }
+    } catch {
+      // not a JSON array
+    }
+    return undefined;
   }
 
   /**
@@ -254,20 +297,8 @@ export class LLMReranker extends RerankerProvider {
    *         `onParseFailure` is `'throw'`.
    */
   #parseScores(text: string, expectedLength: number): number[] {
-    const match = text.match(/\[[\s\d.,]+\]/);
-    if (match) {
-      try {
-        const parsed: unknown = JSON.parse(match[0]);
-        if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'number')) {
-          // Pad or truncate to match the expected batch length.
-          const scores = parsed;
-          while (scores.length < expectedLength) scores.push(0);
-          return scores.slice(0, expectedLength);
-        }
-      } catch {
-        // Fall through to degraded fallback.
-      }
-    }
+    const scores = LLMReranker.#tryParseScores(text, expectedLength);
+    if (scores !== undefined) return scores;
 
     // Emit a parse-error event so the caller can detect degraded reranking.
     this.#bus?.emit('rag.rerank.parse_error', {

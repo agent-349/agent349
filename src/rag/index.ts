@@ -35,12 +35,16 @@ export { CohereReranker } from './reranker/CohereReranker.js';
 export type { CohereRerankerConfig } from './reranker/CohereReranker.js';
 export { TEIReranker } from './reranker/TEIReranker.js';
 export type { TEIRerankerConfig } from './reranker/TEIReranker.js';
-export { QueryRewriter } from './queryRewriting/QueryRewriter.js';
+export { QueryRewriter, DEFAULT_REWRITE_REASONING_EFFORT } from './queryRewriting/QueryRewriter.js';
+export type {
+  QueryRewriterOptions,
+  QueryRewriteFallbackReason,
+} from './queryRewriting/QueryRewriter.js';
 export { ContextualRewriter } from './queryRewriting/ContextualRewriter.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
 export { RAGPipeline } from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
-export type { RAGToolDefaults } from './RAGTool.js';
+export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';
 export { RAGFacade } from './RAGFacade.js';
 export type { RAGFacadeEmbeddingDefaults } from './RAGFacade.js';
 export type { RerankerValidation } from './types.js';

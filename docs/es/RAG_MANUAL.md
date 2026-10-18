@@ -136,7 +136,11 @@ Estrategia opcional que transforma la query antes del embedding para mejorar la 
 - **`ContextualRewriter`** — reformula la query usando el historial de conversación para resolver referencias implícitas ("¿Y el precio?" → "¿Cuál es el precio del Plan A?")
 - **`HyDERewriter`** — genera un documento hipotético que responde la query y busca por similitud con ese documento
 
-Se configura desde `SDKConfig.rag.queryRewriting`.
+Se configura desde `SDKConfig.rag.queryRewriting` (`strategy`, `llmProvider`, `model`, `reasoningEffort`).
+
+Las dos estrategias piden `reasoningEffort: 'minimal'` por defecto. Su presupuesto es chico (150 tokens la contextual, 200 HyDE), y un modelo que razona por defecto (gpt-5, gpt-5-mini, gpt-5-nano) lo gasta entero razonando y devuelve una respuesta vacía. Se puede cambiar con `rag.queryRewriting.reasoningEffort`; solo lo interpreta `OpenAIProvider`.
+
+Cuando un rewriter no puede reescribir (error, respuesta vacía, demasiado larga o, en HyDE, demasiado corta) busca con la query original y emite `rag.query_rewrite.fallback` con `{ strategy, provider, model, reason, stopReason?, error? }`. No tener historial no cuenta como fallback: la query se usa tal cual sin llamar al LLM.
 
 ### RerankerProvider
 
@@ -164,13 +168,17 @@ El `Orchestrator` auto-registra el tool `rag.search` con colecciones `['default'
 ```typescript
 import { createRAGTool } from 'agent349';
 
-const ragTool = createRAGTool(orch.rag.pipeline, ['politicas', 'contratos'], {
-  topK: 15,
-  finalTopK: 5,
-  searchMode: 'hybrid',
-});
+const ragTool = createRAGTool(
+  orch.rag.pipeline,
+  ['politicas', 'contratos'],
+  { topK: 15, finalTopK: 5, searchMode: 'hybrid' },
+  // Historial de la sesión para el query rewriter contextual (opcional).
+  { conversationHistory: (ctx) => orch.memory.load(ctx.sessionId) },
+);
 orch.registerTool(ragTool);
 ```
+
+Con `conversationHistory`, el tool le pasa la conversación de quien llama al query rewriter, igual que una llamada directa a `orch.rag.search({ …, conversationHistory })`. Así un rewriter contextual también resuelve follow-ups en el modo agéntico. El `rag.search` que auto-registra el `Orchestrator`, y el declarado con `ref: 'rag.search'`, ya lo traen. Si no hay rewriter configurado, el historial no se carga; si cargarlo falla, la búsqueda sigue sin historial.
 
 ---
 
@@ -506,6 +514,12 @@ if (check.configured && !check.available) {
   logger.error(`Reranker '${check.provider}' inalcanzable: ${check.error}`);
 }
 ```
+
+En `LLMReranker`, el probe es una puntuación real de un pasaje (mismo prompt,
+`reasoningEffort` y presupuesto que `rerank()`), y solo da `available: true` si
+la respuesta parsea como score. Antes pedía 16 tokens sin `reasoningEffort`: un
+modelo de razonamiento como gpt-5-nano los gastaba razonando, devolvía vacío, y
+el probe lo informaba igual como disponible.
 
 Cuando el probe falla, `error` trae el motivo real (`ECONNREFUSED`, un 401, un
 modelo inexistente). Todos los providers del SDK — reranker, LLM y embedding —

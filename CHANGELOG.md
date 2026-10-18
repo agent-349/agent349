@@ -71,6 +71,32 @@ series, incompatible behavior changes bump the minor version.
   explicit options, so a URL without a password erased the credential's
   (`client password must be a string`); the credential now goes into the URL
   when it has none.
+- **`LLMReranker.validate()` now proves the model can score.** The probe sent
+  16 tokens and no reasoning effort; a reasoning model (gpt-5, gpt-5-mini,
+  gpt-5-nano) spent them on hidden reasoning, returned an empty reply, and the
+  probe still reported `ok: true` because it only checked that the call did not
+  throw. It now runs one real scoring call — same prompt, `reasoningEffort` and
+  token budget as `rerank()` — and fails unless the reply parses as a score
+  (with a hint when the reply hit the token limit). Actual re-ranking was not
+  affected: it already sent `reasoningEffort: 'minimal'`.
+- **Query rewriters work with reasoning models.** `ContextualRewriter` (150
+  tokens) and `HyDERewriter` (200) sent no reasoning effort, so a model that
+  reasons by default returned nothing and the search silently used the original
+  query. Both now send `reasoningEffort: 'minimal'` by default, configurable
+  with `rag.queryRewriting.reasoningEffort` or the new `QueryRewriterOptions`
+  constructor argument (`null` omits it). Models that do not reason by default
+  (e.g. gpt-5.4-mini) behaved correctly before and are unaffected.
+- **Rewriting fallbacks are observable.** When a rewriter keeps the original
+  query (call error, empty, too long, or a too-short HyDE passage) it emits
+  `rag.query_rewrite.fallback` with `strategy`, `provider`, `model`, `reason`
+  and, when known, `stopReason`/`error`.
+- **`rag.search` gives the query rewriter the conversation.** `createRAGTool`
+  accepts a fourth `options` argument with `conversationHistory(context)`; the
+  tool the Orchestrator auto-registers and the declarative `ref: 'rag.search'`
+  use the session history. Before, a contextual rewriter was a no-op whenever
+  retrieval happened through the tool (agentic mode). History is only loaded
+  when a rewriter is configured; a loading failure is ignored.
+- New `RAGPipeline.queryRewriter` getter.
 
 ### Documentation
 

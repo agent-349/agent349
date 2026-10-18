@@ -120,6 +120,11 @@ export class RAGPipeline {
     return this.#reranker;
   }
 
+  /** The query rewriter applied before embedding, if any. */
+  get queryRewriter(): QueryRewriter | undefined {
+    return this.#queryRewriter;
+  }
+
   /**
    * Probes the configured re-ranker and reports whether it can serve queries.
    *

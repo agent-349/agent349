@@ -1,6 +1,7 @@
 import type { LLMMessage, LLMRequest } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
-import { QueryRewriter } from './QueryRewriter.js';
+import { QueryRewriter, rewriteReasoningEffort } from './QueryRewriter.js';
+import type { QueryRewriteFallbackReason, QueryRewriterOptions } from './QueryRewriter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal constants
@@ -43,17 +44,25 @@ export class HyDERewriter extends QueryRewriter {
   readonly #router: LLMRouter;
   readonly #provider: string;
   readonly #model: string;
+  readonly #options: QueryRewriterOptions;
 
   /**
    * @param router   - LLM router instance.
    * @param provider - Provider name registered in the router (e.g. `'claude'`).
    * @param model    - Model identifier (e.g. `'claude-haiku-4-5'`).
+   * @param options  - Reasoning effort (default `'minimal'`) and the bus for fallback events.
    */
-  constructor(router: LLMRouter, provider: string, model: string) {
+  constructor(
+    router: LLMRouter,
+    provider: string,
+    model: string,
+    options: QueryRewriterOptions = {},
+  ) {
     super();
     this.#router = router;
     this.#provider = provider;
     this.#model = model;
+    this.#options = options;
   }
 
   /**
@@ -72,6 +81,7 @@ export class HyDERewriter extends QueryRewriter {
       model: this.#model,
       temperature: 0.3, // Slight variability for document diversity
       maxTokens: 200,
+      ...rewriteReasoningEffort(this.#options),
     };
 
     try {
@@ -79,10 +89,34 @@ export class HyDERewriter extends QueryRewriter {
       const hypothetical = typeof response.content === 'string' ? response.content.trim() : '';
 
       // A HyDE passage shorter than ~20 chars is probably degenerate — fall back.
-      return hypothetical.length > 20 ? hypothetical : query;
-    } catch {
+      if (hypothetical.length === 0) return this.#fallback(query, 'empty', response.stopReason);
+      if (hypothetical.length <= 20) return this.#fallback(query, 'too_short', response.stopReason);
+      return hypothetical;
+    } catch (err) {
       // Degrade gracefully — use original query if generation fails.
-      return query;
+      return this.#fallback(
+        query,
+        'error',
+        undefined,
+        err instanceof Error ? err.message : String(err),
+      );
     }
+  }
+
+  #fallback(
+    query: string,
+    reason: QueryRewriteFallbackReason,
+    stopReason?: string,
+    error?: string,
+  ): string {
+    this.#options.eventBus?.emit('rag.query_rewrite.fallback', {
+      strategy: this.name,
+      provider: this.#provider,
+      model: this.#model,
+      reason,
+      ...(stopReason !== undefined && { stopReason }),
+      ...(error !== undefined && { error }),
+    });
+    return query;
   }
 }

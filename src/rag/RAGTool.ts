@@ -1,10 +1,24 @@
-import type { Tool, ExecutionContext, ToolResult } from '../types/index.js';
+import type { Tool, ExecutionContext, ToolResult, LLMMessage } from '../types/index.js';
 import type { RAGQuery } from './types.js';
 import type { RAGPipeline } from './RAGPipeline.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Optional collaborators of the `rag.search` tool. */
+export interface RAGToolOptions {
+  /**
+   * Loads the recent conversation of the calling context (normally its
+   * session history). When the pipeline has a query rewriter, the tool passes
+   * it as `conversationHistory`, so a contextual rewriter can resolve
+   * follow-ups ("and how much is it?") exactly as a direct
+   * `orch.rag.search({ …, conversationHistory })` call does. Not called when
+   * there is no rewriter; a failure to load is ignored (the search runs
+   * without history).
+   */
+  conversationHistory?: (context: ExecutionContext) => Promise<LLMMessage[]>;
+}
 
 /**
  * Input schema shape for the `rag.search` tool.
@@ -79,6 +93,7 @@ export interface RAGToolDefaults {
  *                             Defaults to `['default']`.
  * @param defaults           - Default retrieval parameters loaded from `SDKConfig.rag.retrieval`.
  *                             LLM input overrides these (except security fields).
+ * @param options            - Optional collaborators, e.g. the conversation-history loader.
  * @returns A {@link Tool} instance ready for registration.
  *
  * @example
@@ -91,6 +106,7 @@ export function createRAGTool(
   pipeline: RAGPipeline,
   defaultCollections: string[] = ['default'],
   defaults: RAGToolDefaults = {},
+  options: RAGToolOptions = {},
 ): Tool {
   return {
     name: 'rag.search',
@@ -133,6 +149,15 @@ export function createRAGTool(
     timeout: 60_000,
 
     async execute(input: RAGToolInput, context: ExecutionContext): Promise<ToolResult> {
+      let conversationHistory: LLMMessage[] | undefined;
+      if (options.conversationHistory !== undefined && pipeline.queryRewriter !== undefined) {
+        try {
+          conversationHistory = await options.conversationHistory(context);
+        } catch {
+          // History only improves rewriting; search without it.
+        }
+      }
+
       const ragQuery: RAGQuery = {
         // Defaults applied first; LLM input overrides them.
         ...defaults,
@@ -144,6 +169,8 @@ export function createRAGTool(
           tenantId: context.tenantId,
           accessRoles: context.roles,
         },
+        ...(conversationHistory !== undefined &&
+          conversationHistory.length > 0 && { conversationHistory }),
       };
 
       try {

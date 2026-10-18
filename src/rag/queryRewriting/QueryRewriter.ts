@@ -1,4 +1,36 @@
-import type { LLMMessage } from '../../types/index.js';
+import type { LLMMessage, LLMRequest } from '../../types/index.js';
+import type { EventBus } from '../../events/EventBus.js';
+
+/** Options shared by the built-in LLM query rewriters. */
+export interface QueryRewriterOptions {
+  /**
+   * Reasoning effort of the rewriting call. Default `'minimal'`: the rewrite
+   * has a small token budget, and a model that reasons by default (gpt-5,
+   * gpt-5-mini, gpt-5-nano) spends all of it on reasoning and returns an
+   * empty reply. Pass `null` to send none. Providers without the notion
+   * ignore it; OpenAI models that reject it are retried without it.
+   */
+  reasoningEffort?: LLMRequest['reasoningEffort'] | null;
+  /** Receives `rag.query_rewrite.fallback` whenever the original query is kept because rewriting failed. */
+  eventBus?: EventBus;
+}
+
+/** Why a rewriter kept the original query. */
+export type QueryRewriteFallbackReason = 'error' | 'empty' | 'too_long' | 'too_short';
+
+/** Default reasoning effort of the built-in rewriters. */
+export const DEFAULT_REWRITE_REASONING_EFFORT: LLMRequest['reasoningEffort'] = 'minimal';
+
+/** The `reasoningEffort` request field for `options` (absent when `null`). */
+export function rewriteReasoningEffort(
+  options: QueryRewriterOptions,
+): Pick<LLMRequest, 'reasoningEffort'> {
+  const effort =
+    options.reasoningEffort === undefined
+      ? DEFAULT_REWRITE_REASONING_EFFORT
+      : options.reasoningEffort;
+  return effort === null || effort === undefined ? {} : { reasoningEffort: effort };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QueryRewriter

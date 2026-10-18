@@ -53,10 +53,14 @@ export type InternalToolFactory = (
 export const INTERNAL_TOOL_FACTORIES: Readonly<Record<string, InternalToolFactory>> = {
   'rag.search': (config, ctx): Tool => {
     const { collections, ...retrieval } = (config ?? {}) as RAGSearchConfig;
-    return createRAGTool(ctx.getRAGPipeline(), collections ?? ['default'], {
-      ...ctx.ragRetrievalDefaults,
-      ...retrieval,
-    });
+    return createRAGTool(
+      ctx.getRAGPipeline(),
+      collections ?? ['default'],
+      { ...ctx.ragRetrievalDefaults, ...retrieval },
+      ctx.loadConversationHistory !== undefined
+        ? { conversationHistory: ctx.loadConversationHistory }
+        : {},
+    );
   },
   'sql.query': (config, ctx): Tool => createSqlQueryTool((config ?? {}) as SqlQueryToolConfig, ctx),
   'sql.schema': (config, ctx): Tool =>

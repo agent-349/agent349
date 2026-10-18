@@ -656,6 +656,13 @@ export interface SDKConfig {
       strategy: 'contextual' | 'hyde' | false;
       model?: string;
       llmProvider?: string;
+      /**
+       * Reasoning effort of the rewriting call. Default: `'minimal'` — the
+       * rewrite has a small budget (150 tokens contextual, 200 HyDE), which a
+       * model that reasons by default (gpt-5, gpt-5-mini, gpt-5-nano) would
+       * spend on reasoning, returning nothing. Ignored where unsupported.
+       */
+      reasoningEffort?: ReasoningEffort;
     };
     reranker?: {
       provider: 'llm' | 'cohere' | 'tei';

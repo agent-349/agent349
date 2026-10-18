@@ -1,4 +1,4 @@
-import type { ExecutionContext } from '../types/index.js';
+import type { ExecutionContext, LLMMessage } from '../types/index.js';
 import type { ConnectionHandle } from '../connections/types.js';
 import type { Credential } from '../credentials/types.js';
 import type { RAGPipeline } from '../rag/RAGPipeline.js';
@@ -15,6 +15,8 @@ export interface InternalToolContext {
   getRAGPipeline: () => RAGPipeline;
   /** Default retrieval parameters from `SDKConfig.rag.retrieval`. */
   ragRetrievalDefaults: RAGToolDefaults;
+  /** Session history of the calling context, for the RAG query rewriter. */
+  loadConversationHistory?: (context: ExecutionContext) => Promise<LLMMessage[]>;
   /**
    * Resolves a named connection from the `connections` section (or an injected
    * one) to a handle.
