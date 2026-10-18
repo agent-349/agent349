@@ -279,11 +279,27 @@ permisos que tenga el usuario.
 Encima de eso hay una cadena de guardas sintácticas: sentencia única, prefijo de
 lectura, palabras prohibidas (incluido `INTO`, que escribe disfrazado de
 `SELECT`), y allowlist de relaciones. Reconocen literales, comentarios e
-identificadores entrecomillados, así que `WHERE nota = 'please delete me'` no da
-falso positivo y `FROM "salaries"` **sí** se verifica.
+identificadores entrecomillados (`"x"`, `` `x` ``, `[x]`), así que
+`WHERE nota = 'please delete me'` no da falso positivo y `FROM "salaries"`
+**sí** se verifica.
+
+La sentencia se tokeniza con las reglas léxicas de cada motor soportado
+(PostgreSQL, MySQL —con y sin `ANSI_QUOTES`—, SQL Server y Oracle), porque
+difieren en escapes (`\'` en MySQL, `E'…'` en PostgreSQL), comentarios (`#` y
+`-- ` en MySQL, comentarios anidados) e identificadores. Cada guarda se aplica a
+todas esas lecturas: un texto que es un string inofensivo para un motor y código
+para otro igual se verifica. Las relaciones salen de cada elemento de una lista
+`FROM` (también los separados por coma), de `JOIN`/`STRAIGHT_JOIN`/`APPLY` y de
+`TABLE`, en todos los niveles de anidamiento. Lo que no se puede verificar con
+certeza se rechaza: literales sin cerrar (`unparseable`), una posición de tabla
+que no tiene un nombre ni una subconsulta (`unparseable`), y los comentarios
+ejecutables `/*! … */` de MySQL o las comillas `q'…'` de Oracle
+(`unsupported-syntax`).
 
 > **Estas guardas no son la frontera de seguridad.** La extracción de relaciones
-> es escaneo de identificadores, no un parser SQL. Lo que acota de verdad **qué**
+> es un escaneo de tokens, no un parser SQL: las funciones del `SELECT` (por
+> ejemplo, una que lee un archivo o consulta otro servidor) no son relaciones y
+> no se verifican. Lo que acota de verdad **qué**
 > puede leer el agente es un usuario de base con permisos limitados a las
 > relaciones expuestas. Declararlo con `readOnlyUser: true` es una afirmación
 > del integrador que el SDK no puede verificar; omitirla emite

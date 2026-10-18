@@ -1,5 +1,14 @@
 import { QueryRejectedError } from '../../../errors/index.js';
-import { scrubSql, stripTrailingSemicolon } from './dialects.js';
+import { stripTrailingSemicolon } from './dialects.js';
+import {
+  LEXICAL_VARIANTS,
+  scanCteNames,
+  scanRelations,
+  tokenize,
+  UnreadableSqlError,
+  UnsupportedSqlError,
+} from './sqlLexer.js';
+import type { SqlToken } from './sqlLexer.js';
 
 /**
  * Statements that write, change structure, grant rights, or run code.
@@ -52,12 +61,22 @@ export interface GuardResult {
  * Runs the free-form guard chain over a model-authored statement.
  *
  * The chain, in order: one statement only, a read-only prefix, no forbidden
- * keywords, and every referenced relation on the allowlist.
+ * keywords, and every referenced relation on the allowlist. Each check runs
+ * over the statement as every supported engine would tokenize it (strings,
+ * escapes, comments and quoted names differ between engines; see
+ * `sqlLexer.ts`), so text that is a harmless string under one engine's rules
+ * but code under another's is still checked. Relations are read from every
+ * item of a FROM list, JOIN/STRAIGHT_JOIN/APPLY and TABLE, at every nesting
+ * level. What cannot be checked with certainty is rejected: an unterminated
+ * literal under every engine's rules (`unparseable`), a FROM position holding
+ * something other than a name or a subquery (`unparseable`), MySQL
+ * executable comments and Oracle `q'…'` quoting (`unsupported-syntax`).
  *
  * ### What this is not
  * It is **not** the security boundary, and reading it as one is the mistake it
- * most invites. Relation extraction is identifier scanning, not a SQL parser,
- * and a determined adversary gets past it. The actual guarantees live one
+ * most invites. Relation extraction is a token scan, not a SQL parser:
+ * function calls in the select list (e.g. a function that reads a file or
+ * queries another server) are not relations and are not checked. The actual guarantees live one
  * layer down and do not depend on understanding the statement: the read-only
  * transaction the dialect opens, and a database user whose grants stop at the
  * exposed relations. These checks exist to catch honest mistakes early, to
@@ -76,49 +95,110 @@ export function guardFreeformSql(sql: string, options: FreeformGuardOptions = {}
     throw new QueryRejectedError('empty', 'The query is empty.');
   }
 
-  const scrubbed = scrubSql(trimmed);
-
-  // 1 — One statement. Stacked statements are how a second, unchecked query
-  //     rides along behind the first.
-  const withoutTrailing = scrubbed.trim().replace(/;\s*$/, '');
-  if (withoutTrailing.includes(';')) {
+  // 1. Tokenize under every engine's lexical rules (see sqlLexer.ts). The
+  //    checks below run over each reading that tokenizes; a trick that hides
+  //    a statement or a relation under one engine's rules shows under another.
+  const readings: SqlToken[][] = [];
+  for (const variant of LEXICAL_VARIANTS) {
+    let tokens: SqlToken[] | undefined;
+    try {
+      tokens = tokenize(trimmed, variant);
+    } catch (err) {
+      if (err instanceof UnsupportedSqlError) {
+        throw new QueryRejectedError('unsupported-syntax', err.message);
+      }
+      throw err;
+    }
+    if (tokens !== undefined) readings.push(stripTrailingSemicolonToken(tokens));
+  }
+  if (readings.length === 0) {
     throw new QueryRejectedError(
-      'single-statement',
-      'Only one statement per call. Remove the extra `;` and send a single SELECT.',
+      'unparseable',
+      'The query has an unterminated string, quoted name or comment. Close it and send a single SELECT.',
     );
   }
 
-  // 2 — Read-only shape.
-  if (!/^\s*(?:select|with|table|values)\b/i.test(withoutTrailing)) {
-    throw new QueryRejectedError(
-      'read-only',
-      'Only read queries are allowed. The statement must start with SELECT or WITH.',
-    );
-  }
-
-  // 3 — Forbidden keywords, matched on whole words in executable text only.
-  for (const keyword of FORBIDDEN) {
-    if (new RegExp(`\\b${keyword}\\b`, 'i').test(withoutTrailing)) {
+  // 2. One statement only.
+  for (const tokens of readings) {
+    if (tokens.some((t) => t.kind === 'punct' && t.value === ';')) {
       throw new QueryRejectedError(
-        'read-only',
-        `The statement uses ${keyword}, which is not allowed. Only read queries are permitted.`,
+        'single-statement',
+        'Only one statement per call. Remove the extra `;` and send a single SELECT.',
       );
     }
   }
 
-  // 4 — Relation allowlist, with CTE names exempted: they are defined by the
-  //     query itself, not tables it is reaching into.
-  const cteNames = extractCteNames(withoutTrailing);
-  const referenced = extractRelations(withoutTrailing).filter(
-    (relation) => !cteNames.has(relation.toLowerCase()),
-  );
+  // 3. A read prefix.
+  for (const tokens of readings) {
+    const first = tokens[0];
+    if (
+      first === undefined ||
+      first.kind !== 'word' ||
+      !READ_PREFIXES.has(first.value.toUpperCase())
+    ) {
+      throw new QueryRejectedError(
+        'read-only',
+        'Only read queries are allowed. The statement must start with SELECT or WITH.',
+      );
+    }
+  }
+
+  // 4. No forbidden keyword as a bare word (a column `t.delete` or a quoted
+  //    name "insert" is not a statement).
+  for (const tokens of readings) {
+    tokens.forEach((t, i) => {
+      if (t.kind !== 'word') return;
+      const previous = tokens[i - 1];
+      if (previous !== undefined && previous.kind === 'punct' && previous.value === '.') return;
+      const keyword = t.value.toUpperCase();
+      if (FORBIDDEN_SET.has(keyword)) {
+        throw new QueryRejectedError(
+          'read-only',
+          `The statement uses ${keyword}, which is not allowed. Only read queries are permitted.`,
+        );
+      }
+    });
+  }
+
+  // 5. Relations, per reading, minus the top-level CTE names; union of all.
+  //    A reading whose table positions do not hold names (e.g. `FROM "t"`
+  //    read as a string, as MySQL does by default) is one its engine cannot
+  //    run either, so it is set aside; if no reading is left, the statement
+  //    cannot be checked and is rejected.
+  const referenced = new Set<string>();
+  let unreadable: UnreadableSqlError | undefined;
+  let checked = 0;
+  for (const tokens of readings) {
+    let relations: string[];
+    try {
+      relations = scanRelations(tokens);
+    } catch (err) {
+      if (err instanceof UnreadableSqlError) {
+        unreadable = err;
+        continue;
+      }
+      throw err;
+    }
+    checked += 1;
+    const ctes = scanCteNames(tokens);
+    for (const relation of relations) {
+      if (!ctes.has(relation.toLowerCase())) referenced.add(relation);
+    }
+  }
+  if (checked === 0) {
+    throw new QueryRejectedError(
+      'unparseable',
+      `The query could not be checked: ${unreadable?.message ?? 'unreadable statement.'} ` +
+        'Reference tables by name.',
+    );
+  }
 
   const allowed = options.allowedRelations ?? [];
   if (allowed.length > 0) {
     const allowedSet = new Set(allowed.map((name) => name.toLowerCase()));
     for (const relation of referenced) {
-      // A schema-qualified name matches either spelling, so declaring
-      // `v_sales` covers `public.v_sales`.
+      // A schema-qualified spelling of an allowed bare name is the same relation
+      // (declaring `v_sales` covers `public.v_sales`).
       const bare = relation.includes('.')
         ? relation.slice(relation.lastIndexOf('.') + 1)
         : relation;
@@ -131,80 +211,51 @@ export function guardFreeformSql(sql: string, options: FreeformGuardOptions = {}
     }
   }
 
-  return { sql: stripTrailingSemicolon(trimmed), relations: referenced };
+  return { sql: stripTrailingSemicolon(trimmed), relations: [...referenced] };
 }
 
-/** Matches a relation name after FROM or JOIN, optionally schema-qualified. */
-const RELATION = /\b(?:from|join)\s+((?:[a-zA-Z_][\w$]*)(?:\s*\.\s*[a-zA-Z_][\w$]*)*)/gi;
+const READ_PREFIXES = new Set(['SELECT', 'WITH', 'TABLE', 'VALUES']);
+const FORBIDDEN_SET: ReadonlySet<string> = new Set(FORBIDDEN);
 
-/** Keywords that can follow FROM but are not relation names. */
-const NOT_RELATIONS = new Set(['select', 'lateral', 'unnest', 'only', 'values', 'table']);
+function stripTrailingSemicolonToken(tokens: SqlToken[]): SqlToken[] {
+  const last = tokens[tokens.length - 1];
+  return last !== undefined && last.kind === 'punct' && last.value === ';'
+    ? tokens.slice(0, -1)
+    : tokens;
+}
 
-/**
- * Extracts the relation names a scrubbed statement reads.
- *
- * Identifier scanning, not parsing: a subquery (`FROM (SELECT …)`) yields no
- * name because the next token is a parenthesis, and that is correct — the
- * relations inside it are matched by their own FROM clauses.
- *
- * @param scrubbed - SQL already passed through `scrubSql`.
- */
-export function extractRelations(scrubbed: string): string[] {
-  const found = new Set<string>();
-  for (const match of scrubbed.matchAll(RELATION)) {
-    const raw = match[1];
-    if (raw === undefined) continue;
-    const name = raw.replace(/\s+/g, '');
-    if (NOT_RELATIONS.has(name.toLowerCase())) continue;
-    found.add(name);
+/** The PostgreSQL reading of `sql`, for the standalone helpers below. */
+function postgresTokens(sql: string): SqlToken[] {
+  try {
+    return tokenize(sql, LEXICAL_VARIANTS[0]!) ?? [];
+  } catch {
+    return [];
   }
-  return [...found];
 }
 
 /**
- * Collects the names bound by a leading `WITH` clause.
+ * Relation names read after FROM (every item of a comma list), JOIN and
+ * TABLE, with schema qualifiers kept and whitespace removed. Deduplicated, in
+ * order of first appearance. Uses PostgreSQL lexical rules; the guard itself
+ * ({@link guardFreeformSql}) checks every engine's. A statement the scanner
+ * cannot read yields no names.
  *
- * Without this, `WITH recent AS (SELECT …) SELECT * FROM recent` would be
- * rejected for reading a relation called `recent` that no allowlist could ever
- * contain — the query defines it itself.
- *
- * Parsing is deliberately narrow: it walks the `name AS ( … )` list from the
- * start of the statement with balanced parentheses, and stops at the first
- * thing that does not fit. A name it fails to collect costs a false rejection,
- * never a false approval.
- *
- * @param scrubbed - SQL already passed through `scrubSql`.
- * @returns Lower-cased CTE names.
+ * @param sql - Statement text (raw or scrubbed).
  */
-export function extractCteNames(scrubbed: string): Set<string> {
-  const names = new Set<string>();
-  const start = /^\s*with\s+(recursive\s+)?/i.exec(scrubbed);
-  if (start === null) return names;
-
-  let i = start[0].length;
-  for (;;) {
-    const head =
-      /^\s*([a-zA-Z_][\w$]*)\s*(\([^)]*\)\s*)?as\s*(?:(?:not\s+)?materialized\s*)?\(/i.exec(
-        scrubbed.slice(i),
-      );
-    if (head === null) return names;
-
-    const name = head[1];
-    if (name === undefined) return names;
-    names.add(name.toLowerCase());
-
-    // Skip the CTE body, tracking nesting so an inner subquery does not end it.
-    let depth = 1;
-    let j = i + head[0].length;
-    while (j < scrubbed.length && depth > 0) {
-      const ch = scrubbed[j];
-      if (ch === '(') depth += 1;
-      else if (ch === ')') depth -= 1;
-      j += 1;
-    }
-
-    const next = /^\s*,\s*/.exec(scrubbed.slice(j));
-    if (next === null) return names;
-    i = j + next[0].length;
+export function extractRelations(sql: string): string[] {
+  try {
+    return scanRelations(postgresTokens(sql));
+  } catch {
+    return [];
   }
+}
+
+/**
+ * Names declared by a leading WITH clause (lower-cased), so their uses are not
+ * mistaken for relations. Only the top-level clause counts.
+ *
+ * @param sql - Statement text (raw or scrubbed).
+ */
+export function extractCteNames(sql: string): Set<string> {
+  return scanCteNames(postgresTokens(sql));
 }

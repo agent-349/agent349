@@ -30,6 +30,33 @@ series, incompatible behavior changes bump the minor version.
   user id with a tab or an action with `|` or a newline could add fields or a
   whole forged record in the SIEM. The output matches the Java SDK.
 
+- **The free-form SQL relation allowlist could be bypassed.** `guardFreeformSql`
+  found relations with one regular expression (`FROM|JOIN <name>`), so these
+  read a relation outside `allowedRelations` and passed: the second and later
+  items of a comma join (`FROM products, salaries`), MySQL backtick and SQL
+  Server bracket identifiers, `TABLE salaries`, `STRAIGHT_JOIN` and `APPLY`, and
+  text that one engine reads as a string but another as code (MySQL `\'`
+  escapes, PostgreSQL `E'…'` strings, MySQL `--x` and non-nested comments). The
+  statement now runs through an engine-aware tokenizer (`sqlLexer.ts`): every
+  check applies to the statement as PostgreSQL, MySQL (with and without
+  `ANSI_QUOTES`), SQL Server and Oracle would tokenize it, and relations come
+  from every FROM-list item, JOIN/STRAIGHT_JOIN/APPLY and TABLE at every nesting
+  level. Writes were never affected (read-only transaction and forbidden
+  keywords), and a database user limited to the exposed relations already
+  bounded what could be read. `GuardResult.relations`, which hosts use for their
+  own allowlists, now lists every relation.
+- What cannot be checked with certainty is rejected with new controls:
+  `unparseable` (a literal unterminated under every engine's rules, a table
+  position holding something other than a name or a subquery, unbalanced
+  parentheses) and `unsupported-syntax` (MySQL executable comments `/*! … */`,
+  Oracle `q'…'` quoting).
+- A CTE declared inside a subquery no longer exempts a same-named relation
+  outside it; only the leading `WITH` clause does. Forbidden keywords are
+  matched as bare words, so a quoted name (`"delete"`) or a qualified column
+  (`t.delete`) is no longer rejected. `IS [NOT] DISTINCT FROM`, `EXTRACT(… FROM
+…)`, `SUBSTRING(… FROM …)`, `TRIM(… FROM …)` and `FROM DUAL` are not taken
+  as relations.
+
 ### Fixed
 
 - **`sql.query` no longer shifts date-time values that have no time zone.** A
