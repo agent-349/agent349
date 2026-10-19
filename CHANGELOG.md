@@ -125,8 +125,9 @@ series, incompatible behavior changes bump the minor version.
 
 - **Security alerts resolved.** `proxy-addr` 2.0.8 (critical, runtime: reached
   through `@modelcontextprotocol/sdk` → `express`; the SDK uses the MCP client,
-  not its server). Development only: `vitest` 4.1.11 and `vite` 8.3.2 close the
-  Vitest UI, Vite and esbuild dev-server advisories. Two advisories remain with
+  not its server). Development only: `vitest` 4.1.11, `vite` 8.3.2 and
+  `source-map-js` 1.2.2 close the Vitest UI, Vite, esbuild dev-server and
+  source-map-js advisories. `mammoth` 1.13.0. Two advisories remain with
   no usable fix: `sprintf-js` (no patched release; reached through `mammoth`'s
   CLI parser and `tedious`, never with a model-controlled format string) and
   `esbuild` 0.27 through `tsup` (low, Windows dev server, which `tsup` does not
