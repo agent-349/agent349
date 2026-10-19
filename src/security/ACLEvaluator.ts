@@ -47,7 +47,7 @@ import type { ACLPolicy, ACLCondition, ACLDecision } from './types.js';
 function stringifyValue(value: unknown): string {
   if (typeof value === 'object' && value !== null) return JSON.stringify(value);
   if (typeof value === 'symbol') return value.toString();
-  return String(value as string | number | boolean | bigint);
+  return String(value);
 }
 
 export class ACLEvaluator {

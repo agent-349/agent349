@@ -456,7 +456,7 @@ export class ClaudeProvider
         input,
       } as Anthropic.ContentBlock;
     }
-    return { type: 'text', text: block.text, citations: null } as Anthropic.ContentBlock;
+    return { type: 'text', text: block.text, citations: null };
   }
 
   /**

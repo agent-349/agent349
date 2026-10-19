@@ -44,14 +44,19 @@ const mockDeleteIndex = vi.fn().mockReturnValue(enqueuedTask({}));
 const mockGetIndex = vi.fn().mockResolvedValue(mockIndex);
 const mockIsHealthy = vi.fn().mockResolvedValue(true);
 
+// The adapter calls `new MeiliSearch(...)`: since Vitest 4 a mock used as a
+// constructor needs a `function` implementation (an arrow function cannot be
+// called with `new`).
 vi.mock('meilisearch', () => ({
-  MeiliSearch: vi.fn().mockImplementation(() => ({
-    createIndex: mockCreateIndex,
-    deleteIndex: mockDeleteIndex,
-    getIndex: mockGetIndex,
-    isHealthy: mockIsHealthy,
-    index: () => mockIndex,
-  })),
+  MeiliSearch: vi.fn().mockImplementation(function () {
+    return {
+      createIndex: mockCreateIndex,
+      deleteIndex: mockDeleteIndex,
+      getIndex: mockGetIndex,
+      isHealthy: mockIsHealthy,
+      index: () => mockIndex,
+    };
+  }),
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -95,20 +95,17 @@ export class MongoAdapter extends StorageAdapter {
     if (ttl !== undefined) {
       doc[this.#ttlField] = new Date(Date.now() + ttl * 1000);
     }
-    await this.#collection.replaceOne({ _id: key } as unknown as Partial<KVDocument>, doc, {
+    await this.#collection.replaceOne({ _id: key }, doc, {
       upsert: true,
     });
   }
 
   override async delete(key: string): Promise<void> {
-    await this.#collection.deleteOne({ _id: key } as unknown as Partial<KVDocument>);
+    await this.#collection.deleteOne({ _id: key });
   }
 
   override async exists(key: string): Promise<boolean> {
-    const count = await this.#collection.countDocuments(
-      { _id: key } as unknown as Partial<KVDocument>,
-      { limit: 1 },
-    );
+    const count = await this.#collection.countDocuments({ _id: key }, { limit: 1 });
     return count > 0;
   }
 

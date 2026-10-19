@@ -170,10 +170,7 @@ describe('doc.read injected stores', () => {
   it('reads through a host-injected store', async () => {
     const store = new HostStore();
     const local = { ...ctx, documentStores: { attachments: store } };
-    const built = createDocReadTool(
-      { sources: [{ name: 'attachments', kind: 'store' }] },
-      local as InternalToolContext,
-    );
+    const built = createDocReadTool({ sources: [{ name: 'attachments', kind: 'store' }] }, local);
 
     const result = await built.execute({ source: 'attachments', ref: 'a1' }, CTX);
     expect((result.data as { text: string }).text).toBe('from the host store');
@@ -184,10 +181,7 @@ describe('doc.read injected stores', () => {
   it('passes the execution context to the store', async () => {
     const store = new HostStore();
     const local = { ...ctx, documentStores: { attachments: store } };
-    const built = createDocReadTool(
-      { sources: [{ name: 'attachments', kind: 'store' }] },
-      local as InternalToolContext,
-    );
+    const built = createDocReadTool({ sources: [{ name: 'attachments', kind: 'store' }] }, local);
 
     await built.execute({ source: 'attachments', ref: 'a1' }, CTX);
     expect(store.seenUser).toBe('u1');
@@ -195,10 +189,7 @@ describe('doc.read injected stores', () => {
 
   it("surfaces the store's refusal as a failed result", async () => {
     const local = { ...ctx, documentStores: { attachments: new HostStore() } };
-    const built = createDocReadTool(
-      { sources: [{ name: 'attachments', kind: 'store' }] },
-      local as InternalToolContext,
-    );
+    const built = createDocReadTool({ sources: [{ name: 'attachments', kind: 'store' }] }, local);
 
     const result = await built.execute({ source: 'attachments', ref: 'forbidden' }, CTX);
     expect(result.success).toBe(false);

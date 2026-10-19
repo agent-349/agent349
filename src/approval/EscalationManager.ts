@@ -65,8 +65,7 @@ export class EscalationManager {
       // is too fragile; we store triggerId in metadata if available, else scan by toolName).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const triggerId = (action.metadata as Record<string, any> | undefined)?.triggerId as
-        | string
-        | undefined;
+        string | undefined;
       const trigger =
         triggerId !== undefined
           ? triggers.find((t) => t.id === triggerId)

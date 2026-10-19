@@ -69,7 +69,7 @@ describe('ConfigCredentialProvider', () => {
     });
 
     await expect(provider.get('db', CTX)).rejects.toThrow(
-      expect.not.stringContaining('ro') as unknown as string,
+      expect.not.stringContaining('ro') as unknown,
     );
   });
 });

@@ -160,7 +160,7 @@ describe('updateDocumentsMetadata()', () => {
       COLLECTION,
       { documentId: 'docC' },
       // documentId/chunkIndex are immutable — only patchable fields are applied.
-      { documentId: 'HACK', chunkIndex: 99, tags: ['cat:renamed'] } as never,
+      { documentId: 'HACK', chunkIndex: 99, tags: ['cat:renamed'] },
     );
     expect(res.updated).toBe(1);
     const hits = await store.search(COLLECTION, [1, 0, 0], 10, { documentId: 'docC' });

@@ -91,14 +91,10 @@ describe('ContextualRewriter', () => {
   });
 
   it('only includes the most recent historyWindow messages', async () => {
-    const longHistory: LLMMessage[] = Array.from(
-      { length: 20 },
-      (_, i) =>
-        ({
-          role: i % 2 === 0 ? 'user' : 'assistant',
-          content: `message ${i}`,
-        }) as LLMMessage,
-    );
+    const longHistory: LLMMessage[] = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `message ${i}`,
+    }));
 
     const router = makeRouter('rewritten');
     const rewriter = new ContextualRewriter(router, 'mock', 'mock-model', 4);

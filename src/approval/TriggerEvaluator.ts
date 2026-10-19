@@ -139,8 +139,8 @@ export class TriggerEvaluator {
 
       case 'context_field': {
         if (condition.field === undefined) return false;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const value = getNestedField(context as unknown as Record<string, any>, condition.field);
+
+        const value = getNestedField(context, condition.field);
         return applyOperator(value, condition.operator, condition.value);
       }
 

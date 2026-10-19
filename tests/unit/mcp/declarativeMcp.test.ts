@@ -60,7 +60,7 @@ describe('declarative MCP configuration', () => {
         mcp: {
           servers: { files: { transport: 'stdio', command: 'ignored', autoRegisterTools: true } },
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 
@@ -96,7 +96,7 @@ describe('declarative MCP configuration', () => {
             },
           ],
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 
@@ -138,7 +138,7 @@ describe('declarative MCP configuration', () => {
             },
           ],
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 
@@ -162,7 +162,7 @@ describe('declarative MCP configuration', () => {
           ],
         },
         skills: [{ name: 'documents', description: 'Read documents', tools: ['files.read'] }],
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 
@@ -184,7 +184,7 @@ describe('declarative MCP configuration', () => {
         mcp: {
           servers: { files: { transport: 'stdio', command: 'ignored', autoRegisterTools: true } },
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 
@@ -204,7 +204,7 @@ describe('declarative MCP configuration', () => {
         tools: {
           definitions: [{ kind: 'mcp', name: 'x', server: 'ghost', remoteName: 'read_file' }],
         },
-      } as DeepPartial<SDKConfig>),
+      }),
     ).rejects.toThrow(/unknown MCP server 'ghost'/);
   });
 
@@ -220,7 +220,7 @@ describe('declarative MCP configuration', () => {
           tools: {
             definitions: [{ kind: 'mcp', name: 'x', server: 'files', remoteName: 'nonexistent' }],
           },
-        } as DeepPartial<SDKConfig>,
+        },
         { mcpClients: inject('files', server) },
       ),
     ).rejects.toThrow(/Available tools: read_file/);
@@ -237,7 +237,7 @@ describe('declarative MCP configuration', () => {
       {
         llm: LLM,
         mcp: { servers: { files: { transport: 'stdio', command: 'ignored' } } },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: inject('files', server) },
     );
 

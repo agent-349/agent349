@@ -121,8 +121,7 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
 
   'llm.call.end': (data) => {
     const usage = data.usage as
-      | { inputTokens?: number; outputTokens?: number; cost?: number }
-      | undefined;
+      { inputTokens?: number; outputTokens?: number; cost?: number } | undefined;
     const performance = data.performance as
       | {
           streamOpenMs?: number;

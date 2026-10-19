@@ -24,7 +24,7 @@ type Emit = (event: string, data: Record<string, unknown>) => void;
 function sameConfig(a: ConnectionConfig | undefined, b: ConnectionConfig): boolean {
   if (a === undefined) return false;
   if (a === b) return true;
-  return deepEqual(a as unknown, b as unknown);
+  return deepEqual(a, b);
 }
 
 /** Structural equality for plain config values. */
@@ -311,7 +311,7 @@ export class ConnectionManager {
     // Both present: the injected config overrides field by field. The cast is
     // safe for same-type merges and is what an override is expected to do;
     // a type mismatch is caught by validateConnections() at load time.
-    return { ...declared, ...injected.config } as ConnectionConfig;
+    return { ...declared, ...injected.config };
   }
 
   /** Resolves the credential declared by a connection, if any. */

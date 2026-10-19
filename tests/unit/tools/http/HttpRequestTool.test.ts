@@ -93,7 +93,7 @@ describe('http.request private addresses', () => {
     const manager = new ConnectionManager({
       connections: {
         api: { type: 'http', baseUrl: 'https://api.internal/v1', ...extra },
-      } as ConnectionsConfig,
+      },
       credentials: new ConfigCredentialProvider(),
     });
     return createHttpRequestTool(

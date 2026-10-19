@@ -76,7 +76,7 @@ export async function startTestMcpServer(options: {
     }));
 
     if (pageSize === undefined) {
-      return { tools: descriptors } as never;
+      return { tools: descriptors };
     }
 
     const start = Number(request.params?.cursor ?? '0');
@@ -86,7 +86,7 @@ export async function startTestMcpServer(options: {
     return {
       tools: page,
       ...(next < descriptors.length && { nextCursor: String(next) }),
-    } as never;
+    };
   });
 
   server.setRequestHandler(CallToolRequestSchema, (request) => {

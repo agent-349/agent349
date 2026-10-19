@@ -2,13 +2,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpConnectionError, McpToolError } from '../errors/index.js';
 import type { EventBus } from '../events/EventBus.js';
 import type { JSONSchema } from '../types/index.js';
-import type {
-  McpCallResult,
-  McpContentBlock,
-  McpServerConfig,
-  McpToolAnnotations,
-  McpToolInfo,
-} from './types.js';
+import type { McpCallResult, McpContentBlock, McpServerConfig, McpToolInfo } from './types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants & options
@@ -71,7 +65,7 @@ function toToolInfo(raw: Record<string, unknown>): McpToolInfo {
   // Conditional assignment required by `exactOptionalPropertyTypes`.
   if (typeof raw['description'] === 'string') info.description = raw['description'];
   if (isRecord(raw['outputSchema'])) info.outputSchema = stripSchemaDialect(raw['outputSchema']);
-  if (isRecord(raw['annotations'])) info.annotations = raw['annotations'] as McpToolAnnotations;
+  if (isRecord(raw['annotations'])) info.annotations = raw['annotations'];
 
   return info;
 }
@@ -180,7 +174,7 @@ export class McpClient {
       });
 
       for (const raw of page.tools) {
-        tools.push(toToolInfo(raw as unknown as Record<string, unknown>));
+        tools.push(toToolInfo(raw));
       }
 
       cursor = typeof page.nextCursor === 'string' ? page.nextCursor : undefined;

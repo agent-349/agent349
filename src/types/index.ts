@@ -355,11 +355,7 @@ export interface ToolResultBlock {
  * `imageFromPath()`, `documentFromBytes()`, …) rather than by hand.
  */
 export type ContentBlock =
-  | TextBlock
-  | MediaBlock
-  | MediaOmittedBlock
-  | ToolUseBlock
-  | ToolResultBlock;
+  TextBlock | MediaBlock | MediaOmittedBlock | ToolUseBlock | ToolResultBlock;
 
 /** Message body: plain text or a list of structured content blocks. */
 export type MessageContent = string | ContentBlock[];
@@ -763,12 +759,7 @@ export interface FileUploadInput {
  * maps its own onto these six values.
  */
 export type BatchJobStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'expired';
+  'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'expired';
 
 /** One request within a batch, tagged with a stable correlation id. */
 export interface BatchRequestItem {
@@ -1001,12 +992,7 @@ export interface ResourceLimits {
  * values without interpreting them.
  */
 export type ContextPath =
-  | 'userId'
-  | 'tenantId'
-  | 'sessionId'
-  | 'agentId'
-  | 'roles'
-  | `metadata.${string}`;
+  'userId' | 'tenantId' | 'sessionId' | 'agentId' | 'roles' | `metadata.${string}`;
 
 /**
  * Where a tool parameter's value comes from.
@@ -2083,14 +2069,7 @@ export interface AuditStats {
  * Dimension by which `AuditStoreAdapter.aggregate()` groups records.
  */
 export type AuditAggregateDimension =
-  | 'category'
-  | 'action'
-  | 'outcome'
-  | 'severity'
-  | 'user'
-  | 'agent'
-  | 'hour'
-  | 'day';
+  'category' | 'action' | 'outcome' | 'severity' | 'user' | 'agent' | 'hour' | 'day';
 
 /**
  * Aggregated result item returned from `AuditStoreAdapter.aggregate()`.

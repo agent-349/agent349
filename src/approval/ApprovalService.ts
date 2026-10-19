@@ -323,7 +323,6 @@ export class ApprovalService {
     }
 
     const claimInfo: { userId: string; comment?: string; modifiedInput?: any } = {
-      // eslint-disable-line @typescript-eslint/no-explicit-any
       userId: approverContext.userId,
       ...(options?.comment !== undefined && { comment: options.comment }),
       ...(options?.modifiedInput !== undefined && { modifiedInput: options.modifiedInput }),

@@ -180,7 +180,7 @@ export class MongoAuditStore extends AuditStoreAdapter {
     const doc = await this.#collection.findOne({
       _id: id,
     } as unknown as Partial<AuditRecordDocument>);
-    return doc === null ? null : this.#fromDocument(doc as unknown as AuditRecordDocument);
+    return doc === null ? null : this.#fromDocument(doc);
   }
 
   /** @inheritdoc */
@@ -196,9 +196,7 @@ export class MongoAuditStore extends AuditStoreAdapter {
   async query(q: AuditQuery): Promise<AuditQueryResult> {
     const filter = this.#buildFilter(q);
 
-    const total = await this.#collection.countDocuments(
-      filter as unknown as Partial<AuditRecordDocument>,
-    );
+    const total = await this.#collection.countDocuments(filter);
 
     const sortBy = q.sortBy ?? 'timestamp';
     const dir: 1 | -1 = (q.sortOrder ?? 'desc') === 'asc' ? 1 : -1;
@@ -228,7 +226,7 @@ export class MongoAuditStore extends AuditStoreAdapter {
   /** @inheritdoc */
   async count(q: Partial<AuditQuery>): Promise<number> {
     const filter = this.#buildFilter(q);
-    return this.#collection.countDocuments(filter as unknown as Partial<AuditRecordDocument>);
+    return this.#collection.countDocuments(filter);
   }
 
   // ─── Aggregate ──────────────────────────────────────────────────────────────
@@ -305,9 +303,7 @@ export class MongoAuditStore extends AuditStoreAdapter {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = { timestamp: { $lt: date } };
     if (tenantId !== undefined) filter['tenantId'] = tenantId;
-    const result = await this.#collection.deleteMany(
-      filter as unknown as Partial<AuditRecordDocument>,
-    );
+    const result = await this.#collection.deleteMany(filter);
     return result.deletedCount;
   }
 

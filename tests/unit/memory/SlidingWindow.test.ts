@@ -4,7 +4,7 @@ import type { LLMMessage } from '../../../src/types/index.js';
 
 function makeMessages(count: number): LLMMessage[] {
   return Array.from({ length: count }, (_, i) => ({
-    role: (i % 2 === 0 ? 'user' : 'assistant') as LLMMessage['role'],
+    role: i % 2 === 0 ? 'user' : 'assistant',
     content: `msg ${i}`,
   }));
 }

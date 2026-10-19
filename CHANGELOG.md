@@ -121,13 +121,32 @@ series, incompatible behavior changes bump the minor version.
   when a rewriter is configured; a loading failure is ignored.
 - New `RAGPipeline.queryRewriter` getter.
 
+### Dependencies
+
+- **Security alerts resolved.** `proxy-addr` 2.0.8 (critical, runtime: reached
+  through `@modelcontextprotocol/sdk` → `express`; the SDK uses the MCP client,
+  not its server). Development only: `vitest` 4.1.11 and `vite` 8.3.2 close the
+  Vitest UI, Vite and esbuild dev-server advisories. Two advisories remain with
+  no usable fix: `sprintf-js` (no patched release; reached through `mammoth`'s
+  CLI parser and `tedious`, never with a model-controlled format string) and
+  `esbuild` 0.27 through `tsup` (low, Windows dev server, which `tsup` does not
+  run).
+- The optional drivers accept their new major versions: `mongodb`
+  `^6.21.0 || ^7.7.0` and `oracledb` `^6.9.0 || ^7.0.1`. A host that already
+  depends on version 6 keeps it; a fresh install gets version 7. `mongodb` 7
+  requires Node.js 20.19 or later.
+- Development tooling: `@typescript-eslint` 8.71, `eslint-config-prettier` 10,
+  `prettier` 3.9. Redundant type assertions the new lint rules report were
+  removed (no behaviour change); TypeScript stays on 5.x (7.0 does not build
+  the project yet).
+
 ### Documentation
 
 - `TOOLS_MANUAL`: an Oracle function with `PRAGMA AUTONOMOUS_TRANSACTION` writes
   despite the read-only transaction (only grants stop it), date-time handling,
   and the redirect and IPv6 rules.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-09-28
 
 First public release under the name **Agent349**.
 

@@ -19,7 +19,7 @@ function record(overrides: Partial<AuditRecord> = {}): AuditRecord {
     metrics: {},
     security: {},
     ...overrides,
-  } as AuditRecord;
+  };
 }
 
 // Values come from users, tools and the model; a SIEM must not be fed forged

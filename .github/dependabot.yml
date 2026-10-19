@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (the native compiler) does not build the project yet.
+      # Remove this rule when moving to it deliberately.
+      - dependency-name: typescript
+        versions: ['>= 7.0.0']
     groups:
       dev-dependencies:
         dependency-type: development

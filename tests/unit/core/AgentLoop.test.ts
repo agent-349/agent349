@@ -1277,7 +1277,7 @@ describe('security middleware integration', () => {
       };
       skillRegistry.register(fskill);
 
-      const executeSpy = vi.fn().mockResolvedValue({ action: 'continue' } as MiddlewareResult);
+      const executeSpy = vi.fn().mockResolvedValue({ action: 'continue' });
       const chain = new SecurityMiddlewareChain();
       chain.use({
         name: 'spy',
@@ -1450,7 +1450,7 @@ describe('HITL — ApprovalService integration', () => {
     const notifier = new ApprovalNotifier([]);
     const executor: ToolExecutor = {
       execute: vi.fn().mockResolvedValue({ success: true, data: {} }),
-    } as unknown as ToolExecutor;
+    };
     const svc = new ApprovalService(store, notifier, executor, bus, config);
     if (trigger !== undefined) svc.addTrigger(trigger);
     return svc;

@@ -106,7 +106,7 @@ describe('connections config validation', () => {
   // Refs resolved by an injected provider are unknown to the config, so the
   // check only applies when a credentials section exists.
   it('allows an unresolvable ref when no credentials section is declared', () => {
-    expect(() => ConfigLoader.from({ connections: CONNECTIONS } as never).get()).not.toThrow();
+    expect(() => ConfigLoader.from({ connections: CONNECTIONS }).get()).not.toThrow();
   });
 
   it('rejects an unknown credential kind', () => {
@@ -125,7 +125,7 @@ describe('Orchestrator connection wiring', () => {
     const config = ConfigLoader.from({
       connections: CONNECTIONS,
       credentials: CREDENTIALS,
-    } as never).get();
+    }).get();
     const orch = await Orchestrator.fromConfig(config);
     const driver = new FakeDriver();
     orch.connections.registerDriver(driver);
@@ -140,7 +140,7 @@ describe('Orchestrator connection wiring', () => {
     const config = ConfigLoader.from({
       connections: CONNECTIONS,
       credentials: CREDENTIALS,
-    } as never).get();
+    }).get();
     const orch = await Orchestrator.fromConfig(config);
 
     await expect(orch.connections.get('erp').credential(CTX)).resolves.toEqual({
@@ -165,7 +165,7 @@ describe('Orchestrator connection wiring', () => {
     const config = ConfigLoader.from({
       connections: CONNECTIONS,
       credentials: CREDENTIALS,
-    } as never).get();
+    }).get();
     const orch = await Orchestrator.fromConfig(config, { credentialProvider: new Injected() });
 
     await expect(orch.connections.get('erp').credential(CTX)).resolves.toEqual({
@@ -178,7 +178,7 @@ describe('Orchestrator connection wiring', () => {
 
   it('serves a host-injected connection instead of opening its own', async () => {
     const pool = { host: true };
-    const config = ConfigLoader.from({ connections: CONNECTIONS } as never).get();
+    const config = ConfigLoader.from({ connections: CONNECTIONS }).get();
     const orch = await Orchestrator.fromConfig(config, {
       connections: { erp: { resource: pool } },
     });
@@ -192,7 +192,7 @@ describe('Orchestrator connection wiring', () => {
   });
 
   it('closes connections it opened on shutdown', async () => {
-    const config = ConfigLoader.from({ connections: OPEN_CONNECTIONS } as never).get();
+    const config = ConfigLoader.from({ connections: OPEN_CONNECTIONS }).get();
     const orch = await Orchestrator.fromConfig(config);
     const driver = new FakeDriver();
     orch.connections.registerDriver(driver);
@@ -205,7 +205,7 @@ describe('Orchestrator connection wiring', () => {
 
   // Injected connections belong to the host, like injected audit stores.
   it('leaves host-injected connections open on shutdown', async () => {
-    const config = ConfigLoader.from({ connections: CONNECTIONS } as never).get();
+    const config = ConfigLoader.from({ connections: CONNECTIONS }).get();
     const orch = await Orchestrator.fromConfig(config, {
       connections: { erp: { resource: {} } },
     });
@@ -219,7 +219,7 @@ describe('Orchestrator connection wiring', () => {
   });
 
   it('forwards connection lifecycle events to the event bus', async () => {
-    const config = ConfigLoader.from({ connections: OPEN_CONNECTIONS } as never).get();
+    const config = ConfigLoader.from({ connections: OPEN_CONNECTIONS }).get();
     const orch = await Orchestrator.fromConfig(config);
     orch.connections.registerDriver(new FakeDriver());
     const opened = vi.fn();
@@ -241,7 +241,7 @@ describe('Orchestrator.toolServices', () => {
     const config = ConfigLoader.from({
       connections: CONNECTIONS,
       credentials: CREDENTIALS,
-    } as never).get();
+    }).get();
     const orch = await Orchestrator.fromConfig(config);
 
     const services = orch.toolServices;

@@ -166,11 +166,7 @@ export class MongoPendingActionStore extends PendingActionStore {
   /** @inheritdoc */
   async update(action: PendingAction): Promise<void> {
     const doc = this.#toDocument(action);
-    await this.#collection.replaceOne(
-      { _id: action.id } as unknown as Partial<PendingActionDocument>,
-      doc,
-      { upsert: false },
-    );
+    await this.#collection.replaceOne({ _id: action.id }, doc, { upsert: false });
   }
 
   /**
@@ -194,7 +190,7 @@ export class MongoPendingActionStore extends PendingActionStore {
     );
 
     if (result === null) return null;
-    return this.#fromDocument(result as unknown as PendingActionDocument);
+    return this.#fromDocument(result);
   }
 
   // ─── Read ─────────────────────────────────────────────────────────────────
@@ -205,7 +201,7 @@ export class MongoPendingActionStore extends PendingActionStore {
       _id: id,
     } as unknown as Partial<PendingActionDocument>);
     if (doc === null) return null;
-    return this.#fromDocument(doc as unknown as PendingActionDocument);
+    return this.#fromDocument(doc);
   }
 
   /** @inheritdoc */
@@ -281,7 +277,7 @@ export class MongoPendingActionStore extends PendingActionStore {
       const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
       query['status'] = { $in: statuses };
     }
-    return this.#collection.countDocuments(query as unknown as Partial<PendingActionDocument>);
+    return this.#collection.countDocuments(query);
   }
 
   // ─── Cleanup ──────────────────────────────────────────────────────────────
@@ -291,7 +287,7 @@ export class MongoPendingActionStore extends PendingActionStore {
     const result = await this.#collection.deleteMany({
       status: { $in: TERMINAL_STATUSES },
       updatedAt: { $lt: date },
-    } as unknown as Partial<PendingActionDocument>);
+    });
     return result.deletedCount;
   }
 

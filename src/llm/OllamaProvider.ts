@@ -147,10 +147,7 @@ export class OllamaProvider extends LLMProvider {
    * @param _fetch   - Optional fetch implementation; defaults to `globalThis.fetch`.
    *                   Primarily used for testing — omit in production.
    */
-  constructor(
-    config: OllamaClientConfig = {},
-    _fetch: OllamaFetch = globalThis.fetch as unknown as OllamaFetch,
-  ) {
+  constructor(config: OllamaClientConfig = {}, _fetch: OllamaFetch = globalThis.fetch) {
     super();
     this.name = config.name ?? 'ollama';
     this.#baseUrl = (config.baseUrl ?? 'http://localhost:11434').replace(/\/$/, '');

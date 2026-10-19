@@ -31,12 +31,9 @@ function normalizeSession(raw: unknown): Session {
   const s = raw as Session;
   return {
     ...s,
-    createdAt:
-      s.createdAt instanceof Date ? s.createdAt : new Date(s.createdAt as unknown as string),
+    createdAt: s.createdAt instanceof Date ? s.createdAt : new Date(s.createdAt),
     lastActivityAt:
-      s.lastActivityAt instanceof Date
-        ? s.lastActivityAt
-        : new Date(s.lastActivityAt as unknown as string),
+      s.lastActivityAt instanceof Date ? s.lastActivityAt : new Date(s.lastActivityAt),
   };
 }
 

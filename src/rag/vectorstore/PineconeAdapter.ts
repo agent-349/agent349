@@ -279,7 +279,7 @@ export class PineconeAdapter extends VectorStoreAdapter {
     requireActiveFilter(filter, 'update');
     const fields = toChunkPatch(patch);
     if (Object.keys(fields).length === 0) return { updated: 0 };
-    const setMetadata: PineconeMetadata = { ...fields } as PineconeMetadata;
+    const setMetadata: PineconeMetadata = { ...fields };
     if (fields.accessRoles !== undefined)
       setMetadata['accessRoles'] = storedRoles(fields.accessRoles);
     const namespace = this.#namespace(collection);

@@ -392,7 +392,7 @@ function stripLocations(params: Record<string, HttpParamBinding>): BindingMap {
   const out: BindingMap = {};
   for (const [key, binding] of Object.entries(params)) {
     const { in: _location, ...rest } = binding;
-    out[key] = rest as ValueBinding;
+    out[key] = rest;
   }
   return out;
 }

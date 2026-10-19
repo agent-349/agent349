@@ -71,7 +71,11 @@ function csvCell(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'object') return JSON.stringify(value);
   if (typeof value === 'symbol') return value.toString();
-  return String(value as string | number | boolean | bigint);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  return ''; // a function has no meaningful CSV form
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

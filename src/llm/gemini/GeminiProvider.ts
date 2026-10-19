@@ -768,10 +768,10 @@ export class GeminiProvider
         totalTokens: inputTokens + outputTokens,
         ...(cost !== undefined && { cost }),
         ...(usage?.input_tokens_by_modality !== undefined && {
-          inputByModality: usage.input_tokens_by_modality as ModalityUsage[],
+          inputByModality: usage.input_tokens_by_modality,
         }),
         ...(usage?.output_tokens_by_modality !== undefined && {
-          outputByModality: usage.output_tokens_by_modality as ModalityUsage[],
+          outputByModality: usage.output_tokens_by_modality,
         }),
       },
       ...(performance !== undefined && { performance }),

@@ -181,8 +181,7 @@ const MSSQL_ZONELESS = new Map<string, ZonelessKind>([
 function zonelessColumns(result: MsSqlResult): Map<string, ZonelessKind> {
   const meta = (
     result.recordset as unknown as
-      | { columns?: Record<string, { type?: { declaration?: string } }> }
-      | undefined
+      { columns?: Record<string, { type?: { declaration?: string } }> } | undefined
   )?.columns;
   const zoneless = new Map<string, ZonelessKind>();
   for (const [name, column] of Object.entries(meta ?? {})) {

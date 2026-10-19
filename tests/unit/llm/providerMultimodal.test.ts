@@ -38,7 +38,7 @@ function makeClaude(): {
     stop_sequence: null,
     model: 'claude-sonnet-4-20250514',
     usage: { input_tokens: 10, output_tokens: 5 },
-  } as unknown as Anthropic.Message);
+  });
 
   const client = {
     messages: { create, batches: {} },
@@ -250,7 +250,7 @@ function makeOpenAI(config: Partial<ConstructorParameters<typeof OpenAIProvider>
       },
     ],
     usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-  } as unknown as OpenAI.ChatCompletion);
+  });
 
   const client = {
     chat: { completions: { create } },

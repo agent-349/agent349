@@ -369,12 +369,11 @@ export class OpenAIProvider
       if (typeof request.onToken === 'function') {
         const buildStreamingParams = (
           quirks: ModelQuirks,
-        ): OpenAI.ChatCompletionCreateParamsStreaming =>
-          ({
-            ...buildParams(quirks),
-            stream: true,
-            stream_options: { include_usage: true },
-          }) as OpenAI.ChatCompletionCreateParamsStreaming;
+        ): OpenAI.ChatCompletionCreateParamsStreaming => ({
+          ...buildParams(quirks),
+          stream: true,
+          stream_options: { include_usage: true },
+        });
 
         const streamed = await this.#createStreamingChatCompletion(
           buildStreamingParams,
@@ -739,7 +738,7 @@ export class OpenAIProvider
         name: sanitize(tool.name),
         description: tool.description,
         // Cast: JSONSchema (Record<string,unknown>) satisfies OpenAI's FunctionParameters.
-        parameters: tool.inputSchema as OpenAI.FunctionParameters,
+        parameters: tool.inputSchema,
       },
     }));
   }

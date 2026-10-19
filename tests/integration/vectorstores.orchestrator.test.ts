@@ -87,7 +87,7 @@ describe.each(engines)('RAG end to end on $name', ({ vectorStore, vectorOnly }) 
   it('ingests, searches with tenant and role scope, and shuts down', async () => {
     const orch = await Orchestrator.create({
       rag: {
-        vectorStore: vectorStore as never,
+        vectorStore: vectorStore,
         embedding: {
           defaultProvider: 'hashing',
           defaultModel: 'hashing-16',

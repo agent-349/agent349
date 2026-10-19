@@ -107,7 +107,7 @@ export class MongoDriver extends MongoQueryDriver {
     const mongo = await importMongo();
     const client = new mongo.MongoClient(config.url ?? '', buildOptions(config, credential));
     await client.connect?.();
-    this.#databases.set(client as object, config.database);
+    this.#databases.set(client, config.database);
     return client;
   }
 
@@ -133,7 +133,7 @@ export class MongoDriver extends MongoQueryDriver {
       );
     }
 
-    const database = this.#databases.get(resource as object);
+    const database = this.#databases.get(resource);
     const collection = resource.db(database).collection(request.collection);
 
     // Dates and ObjectIds arrive as Extended JSON wrappers: JSON has neither,

@@ -327,7 +327,7 @@ describe('pinnedLookup', () => {
     callback: (err: unknown, addresses: unknown, family?: number) => void,
   ) => void;
 
-  const hook = (address: string): Hook => pinnedLookup(address) as unknown as Hook;
+  const hook = (address: string): Hook => pinnedLookup(address);
 
   it('answers happy-eyeballs lookups (all: true) with an array of addresses', () => {
     const callback = vi.fn();

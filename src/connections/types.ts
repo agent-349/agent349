@@ -136,10 +136,7 @@ export interface MailConnectionConfig extends ConnectionConfigBase {
 
 /** Any declared connection, discriminated by `type`. */
 export type ConnectionConfig =
-  | SqlConnectionConfig
-  | MongoConnectionConfig
-  | HttpConnectionConfig
-  | MailConnectionConfig;
+  SqlConnectionConfig | MongoConnectionConfig | HttpConnectionConfig | MailConnectionConfig;
 
 /** The `connections` config section. */
 export type ConnectionsConfig = Record<string, ConnectionConfig>;

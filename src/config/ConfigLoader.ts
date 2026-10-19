@@ -539,13 +539,7 @@ export interface SDKConfig {
      */
     vectorStore: {
       adapter:
-        | 'in-memory'
-        | 'meilisearch'
-        | 'pgvector'
-        | 'qdrant'
-        | 'pinecone'
-        | 'weaviate'
-        | 'milvus';
+        'in-memory' | 'meilisearch' | 'pgvector' | 'qdrant' | 'pinecone' | 'weaviate' | 'milvus';
       meilisearch?: {
         /** Base URL of the Meilisearch instance. Default: `'http://localhost:7700'`. */
         url: string;

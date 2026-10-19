@@ -652,12 +652,7 @@ function similarity(
 
 // GraphQL input values: plain JSON, except enum literals, which must be unquoted.
 type GraphQLValue =
-  | string
-  | number
-  | boolean
-  | GraphQLEnum
-  | GraphQLValue[]
-  | { [key: string]: GraphQLValue };
+  string | number | boolean | GraphQLEnum | GraphQLValue[] | { [key: string]: GraphQLValue };
 interface GraphQLEnum {
   readonly __enum: string;
 }

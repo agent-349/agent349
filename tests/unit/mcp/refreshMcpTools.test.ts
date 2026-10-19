@@ -202,7 +202,7 @@ describe('Orchestrator.refreshMcpTools()', () => {
             sb: { transport: 'stdio', command: 'x', autoRegisterTools: true },
           },
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: { sa: new McpClient('sa', a.config), sb: new McpClient('sb', b.config) } },
     );
 
@@ -228,7 +228,7 @@ describe('Orchestrator.refreshMcpTools()', () => {
         tools: {
           definitions: [{ kind: 'mcp', name: 'files.read', server: 'files', remoteName: 'read' }],
         },
-      } as DeepPartial<SDKConfig>,
+      },
       { mcpClients: { files: new McpClient('files', server.config) } },
     );
 

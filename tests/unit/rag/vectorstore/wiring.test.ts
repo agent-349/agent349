@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('rag.vectorStore configuration', () => {
   const load = (vectorStore: Record<string, unknown>, retrieval: Record<string, unknown> = {}) =>
-    ConfigLoader.from({ rag: { vectorStore: vectorStore as never, retrieval } }).get();
+    ConfigLoader.from({ rag: { vectorStore: vectorStore, retrieval } }).get();
 
   it('accepts every built-in adapter with its settings', () => {
     expect(() =>
