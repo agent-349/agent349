@@ -56,6 +56,29 @@ series, incompatible behavior changes bump the minor version.
   (`t.delete`) is no longer rejected. `IS [NOT] DISTINCT FROM`, `EXTRACT(… FROM
 …)`, `SUBSTRING(… FROM …)`, `TRIM(… FROM …)` and `FROM DUAL` are not taken
   as relations.
+- **`guardPipeline` walks nested pipelines and every cross-collection stage.**
+  It used to check only a top-level `$lookup`. It now also refuses, against
+  the allowlist, `$graphLookup`, `$unionWith` (string or `{ coll, pipeline }`)
+  and the sub-pipelines inside `$facet`, `$lookup.pipeline` and
+  `$unionWith.pipeline` — each was a way to read a collection the query was
+  never allowed to name. A `$lookup` whose `from` is `{ db, coll }` (another
+  database) is refused even without an allowlist.
+- **Server stages are refused** (`server-stage` control): `$currentOp`,
+  `$listSessions`, `$listLocalSessions`, `$collStats`, `$indexStats`,
+  `$planCacheStats`, `$listSearchIndexes`, `$listSampledQueries`,
+  `$shardedDataDistribution`, `$querySettings`, `$changeStream`,
+  `$changeStreamSplitLargeEvent`. They describe the deployment, not the
+  exposed collections.
+
+### Added
+
+- **Extended JSON in Mongo queries.** `MongoDriver` converts single-key
+  `{ $date }`, `{ $oid }`, `{ $numberDecimal }` and `{ $numberLong }` wrappers
+  into BSON values before running a filter, pipeline or projection. A model
+  writes JSON, which has no dates and no ObjectIds: without this, a free-form
+  filter on a date compared a Date field with a string and silently matched
+  nothing. An unusable wrapper is refused (`extended-json` control).
+  `reviveExtendedJson` is exported for hosts that build queries themselves.
 
 ### Fixed
 

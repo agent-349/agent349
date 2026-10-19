@@ -18,6 +18,29 @@ const CODE_OPERATORS = ['$where', '$function', '$accumulator', '$expr.$function'
  */
 const WRITE_STAGES = ['$out', '$merge'];
 
+/**
+ * Stages that read the server rather than a collection.
+ *
+ * None of them reads data the allowlist names: they report sessions, running
+ * operations, storage and index statistics, query plans and change streams.
+ * That is information about the deployment — other users' queries included —
+ * and a model analysing business data has no use for it.
+ */
+const SERVER_STAGES = [
+  '$currentOp',
+  '$listSessions',
+  '$listLocalSessions',
+  '$collStats',
+  '$indexStats',
+  '$planCacheStats',
+  '$listSearchIndexes',
+  '$listSampledQueries',
+  '$shardedDataDistribution',
+  '$querySettings',
+  '$changeStream',
+  '$changeStreamSplitLargeEvent',
+];
+
 /** Options for the Mongo guard chain. */
 export interface MongoGuardOptions {
   /** Collections the query may touch. Empty means no allowlist. */
@@ -39,25 +62,33 @@ export function guardFilter(filter: unknown, options: MongoGuardOptions = {}): v
 /**
  * Checks a model-authored aggregation pipeline.
  *
- * Beyond code operators, this refuses write stages and any `$lookup` reaching a
- * collection outside the allowlist — without that last check, a lookup is a way
- * to read a collection the query was never allowed to name.
+ * Beyond code operators, this refuses write stages, stages that inspect the
+ * server instead of a collection, and every way a pipeline can reach another
+ * collection — `$lookup`, `$graphLookup` and `$unionWith` — when the target is
+ * outside the allowlist. Without that last check, any of the three is a way to
+ * read a collection the query was never allowed to name.
+ *
+ * The walk is recursive: `$facet`, `$lookup.pipeline` and `$unionWith.pipeline`
+ * hold whole sub-pipelines, and checking only the top level would let one of
+ * those stages through one level down.
  *
  * @param pipeline - The pipeline stages.
  * @param options  - The collection allowlist.
  * @throws {@link QueryRejectedError} naming the guard that fired.
  */
 export function guardPipeline(pipeline: unknown, options: MongoGuardOptions = {}): void {
+  assertNoCodeOperators(pipeline);
+  checkStages(pipeline, options);
+}
+
+/** Walks one pipeline (top level or nested) stage by stage. */
+function checkStages(pipeline: unknown, options: MongoGuardOptions): void {
   if (!Array.isArray(pipeline)) {
     throw new QueryRejectedError('pipeline-shape', 'The pipeline must be an array of stages.');
   }
 
-  assertNoCodeOperators(pipeline);
-
-  const allowed = (options.allowedCollections ?? []).map((name) => name.toLowerCase());
-
-  for (const stage of pipeline) {
-    if (typeof stage !== 'object' || stage === null) {
+  for (const stage of pipeline as unknown[]) {
+    if (typeof stage !== 'object' || stage === null || Array.isArray(stage)) {
       throw new QueryRejectedError('pipeline-shape', 'Every pipeline stage must be an object.');
     }
 
@@ -70,21 +101,69 @@ export function guardPipeline(pipeline: unknown, options: MongoGuardOptions = {}
         );
       }
 
-      if (operator === '$lookup' && allowed.length > 0) {
-        const target =
-          typeof value === 'object' && value !== null
-            ? (value as { from?: unknown }).from
-            : undefined;
-        if (typeof target === 'string' && !allowed.includes(target.toLowerCase())) {
-          throw new QueryRejectedError(
-            'allowed-collections',
-            `$lookup reaches '${target}', which is not available. ` +
-              `You can query: ${(options.allowedCollections ?? []).join(', ')}.`,
-          );
+      if (SERVER_STAGES.includes(operator)) {
+        throw new QueryRejectedError(
+          'server-stage',
+          `The stage ${operator} inspects the database server, not a collection, and is ` +
+            'not allowed. Read only the collections you were given.',
+        );
+      }
+
+      const spec = isRecord(value) ? value : undefined;
+
+      if (operator === '$lookup' || operator === '$graphLookup') {
+        // `from` may be omitted by a `$lookup` whose sub-pipeline starts with
+        // `$documents`; that reads nothing stored, so there is nothing to check.
+        if (spec?.['from'] !== undefined) assertReachable(spec['from'], operator, options);
+        if (spec?.['pipeline'] !== undefined) checkStages(spec['pipeline'], options);
+      }
+
+      if (operator === '$unionWith') {
+        if (typeof value === 'string') {
+          assertReachable(value, operator, options);
+        } else {
+          assertReachable(spec?.['coll'], operator, options);
+          if (spec?.['pipeline'] !== undefined) checkStages(spec['pipeline'], options);
         }
+      }
+
+      if (operator === '$facet' && spec !== undefined) {
+        for (const branch of Object.values(spec)) checkStages(branch, options);
       }
     }
   }
+}
+
+/**
+ * Checks the collection a cross-collection stage reaches.
+ *
+ * A target that is not a plain collection name — `{ db, coll }` — reaches
+ * another database, which no allowlist of this connection can describe, so it
+ * is refused even when no allowlist is configured.
+ */
+function assertReachable(target: unknown, operator: string, options: MongoGuardOptions): void {
+  if (typeof target !== 'string' || target === '') {
+    throw new QueryRejectedError(
+      'allowed-collections',
+      `${operator} must name a collection of this database by its plain name.`,
+    );
+  }
+
+  const allowed = options.allowedCollections ?? [];
+  if (allowed.length === 0) return;
+
+  if (!allowed.some((name) => name.toLowerCase() === target.toLowerCase())) {
+    throw new QueryRejectedError(
+      'allowed-collections',
+      `${operator} reaches '${target}', which is not available. ` +
+        `You can query: ${allowed.join(', ')}.`,
+    );
+  }
+}
+
+/** Whether `value` is a plain object rather than an array or a scalar. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

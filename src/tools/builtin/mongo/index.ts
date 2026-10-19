@@ -7,3 +7,5 @@ export { MongoQueryDriver, MongoDriver, isMongoDriver } from './MongoDriver.js';
 export type { MongoQueryRequest, MongoQueryResult } from './MongoDriver.js';
 export { guardFilter, guardPipeline, guardCollection, fillMongoTemplate } from './guards.js';
 export type { MongoGuardOptions } from './guards.js';
+export { reviveExtendedJson } from './extendedJson.js';
+export type { ExtendedJsonBson } from './extendedJson.js';

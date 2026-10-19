@@ -139,6 +139,76 @@ describe('mongo guards', () => {
     ).not.toThrow();
   });
 
+  // Every way a pipeline reaches another collection, at any depth.
+  it.each([
+    ['$graphLookup', [{ $graphLookup: { from: 'salaries', startWith: '$a' } }]],
+    ['$unionWith (string)', [{ $unionWith: 'salaries' }]],
+    ['$unionWith (object)', [{ $unionWith: { coll: 'salaries', pipeline: [] } }]],
+    ['$lookup inside $facet', [{ $facet: { a: [{ $lookup: { from: 'salaries' } }] } }]],
+    [
+      '$lookup inside a $lookup pipeline',
+      [{ $lookup: { from: 'areas', pipeline: [{ $lookup: { from: 'salaries' } }] } }],
+    ],
+    [
+      '$unionWith inside a $unionWith pipeline',
+      [{ $unionWith: { coll: 'areas', pipeline: [{ $unionWith: 'salaries' }] } }],
+    ],
+  ])('refuses %s reaching outside the allowlist', (_name, pipeline) => {
+    expect(() => guardPipeline(pipeline, { allowedCollections: ['tickets', 'areas'] })).toThrow(
+      /salaries/,
+    );
+  });
+
+  it('allows nested reads into allowed collections', () => {
+    expect(() =>
+      guardPipeline(
+        [
+          { $facet: { byArea: [{ $group: { _id: '$area' } }], all: [{ $count: 'n' }] } },
+          { $unionWith: { coll: 'areas', pipeline: [{ $match: { open: true } }] } },
+          {
+            $graphLookup: {
+              from: 'areas',
+              startWith: '$parent',
+              connectFromField: 'p',
+              connectToField: '_id',
+              as: 'tree',
+            },
+          },
+        ],
+        { allowedCollections: ['tickets', 'areas'] },
+      ),
+    ).not.toThrow();
+  });
+
+  it('refuses a write stage hidden inside a $facet', () => {
+    expect(() => guardPipeline([{ $facet: { a: [{ $out: 'copy' }] } }])).toThrow(
+      /writes to the database/,
+    );
+  });
+
+  // A `{ db, coll }` target leaves the database, which no allowlist describes.
+  it('refuses a cross-database $lookup even without an allowlist', () => {
+    expect(() =>
+      guardPipeline([{ $lookup: { from: { db: 'admin', coll: 'system.users' } } }]),
+    ).toThrow(/plain name/);
+  });
+
+  it.each([
+    ['$currentOp'],
+    ['$listSessions'],
+    ['$collStats'],
+    ['$indexStats'],
+    ['$planCacheStats'],
+  ])('refuses the server stage %s', (stage) => {
+    expect(() => guardPipeline([{ [stage]: {} }])).toThrow(/database server/);
+  });
+
+  it('finds a code operator inside a nested pipeline', () => {
+    expect(() => guardPipeline([{ $facet: { a: [{ $match: { $where: 'sleep(1)' } }] } }])).toThrow(
+      /code-operator|\$where/,
+    );
+  });
+
   it('refuses a pipeline that is not an array', () => {
     expect(() => guardPipeline({ $match: {} })).toThrow(/array of stages/);
   });

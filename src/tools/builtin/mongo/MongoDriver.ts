@@ -2,6 +2,8 @@ import { ConnectionDriver } from '../../../connections/types.js';
 import type { ConnectionConfig, MongoConnectionConfig } from '../../../connections/types.js';
 import type { Credential } from '../../../credentials/types.js';
 import { ConnectionError } from '../../../errors/index.js';
+import { reviveExtendedJson } from './extendedJson.js';
+import type { ExtendedJsonBson } from './extendedJson.js';
 
 /** One read against a Mongo collection. */
 export interface MongoQueryRequest {
@@ -134,16 +136,22 @@ export class MongoDriver extends MongoQueryDriver {
     const database = this.#databases.get(resource as object);
     const collection = resource.db(database).collection(request.collection);
 
+    // Dates and ObjectIds arrive as Extended JSON wrappers: JSON has neither,
+    // and without them a filter on a date or an `_id` silently matches nothing.
+    // The constructors come from the same `mongodb` that serialises the query.
+    const bson = await importMongo();
+    const revive = <T>(value: T): T => reviveExtendedJson(value, bson) as T;
+
     const rows =
       request.pipeline !== undefined
         ? await collection
-            .aggregate([...request.pipeline, { $limit: request.limit }], {
+            .aggregate([...revive(request.pipeline), { $limit: request.limit }], {
               maxTimeMS: request.maxTimeMs,
             })
             .toArray()
         : await collection
-            .find(request.filter ?? {}, {
-              ...(request.projection !== undefined && { projection: request.projection }),
+            .find(revive(request.filter ?? {}), {
+              ...(request.projection !== undefined && { projection: revive(request.projection) }),
               ...(request.sort !== undefined && { sort: request.sort }),
               limit: request.limit,
               maxTimeMS: request.maxTimeMs,
@@ -175,7 +183,7 @@ function buildOptions(
 }
 
 /** The slice of the `mongodb` module namespace this driver needs. */
-interface MongoModule {
+interface MongoModule extends ExtendedJsonBson {
   MongoClient: new (url: string, options: Record<string, unknown>) => MongoClientLike;
 }
 
