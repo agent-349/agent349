@@ -58,6 +58,11 @@ export abstract class RerankerProvider {
    */
   abstract validate(): Promise<ProviderProbe>;
 
+  /** Model this re-ranker scores with, when it reports one (informational). */
+  get model(): string | undefined {
+    return undefined;
+  }
+
   /**
    * Builds the text a re-ranker scores for a passage: the document title
    * followed by the chunk content.

@@ -460,6 +460,7 @@ describe('RAGPipeline (integration)', () => {
       const pipeline = new RAGPipeline(embeddingRouter, store, undefined, bus, tokens);
       const output = pipeline.formatForContext([passages[0]!], {
         template: 'CONTENT: {{content}} | SRC: {{source}}',
+        sourceLabel: 'source',
       });
       expect(output).toBe('CONTENT: Hello world | SRC: https://example.com');
     });

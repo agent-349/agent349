@@ -1542,6 +1542,82 @@ export interface RAGQuery {
   conversationHistory?: LLMMessage[];
 }
 
+/** Why a query rewriter kept the original query. */
+export type QueryRewriteFallbackReason = 'error' | 'empty' | 'too_long' | 'too_short';
+
+/**
+ * Outcome of one query-rewriting step, as reported by
+ * `QueryRewriter.rewriteWithOutcome()` and recorded in {@link RAGTrace}.
+ */
+export interface QueryRewriteOutcome {
+  /** The query to search with: the rewritten one, or the original when not applied. */
+  query: string;
+  /** Whether the rewriter produced a new query. */
+  applied: boolean;
+  /**
+   * Why the original query was kept although rewriting was attempted. Absent
+   * when the rewrite was applied, or deliberately skipped (e.g. no history).
+   */
+  fallbackReason?: QueryRewriteFallbackReason;
+  /** Provider error message when `fallbackReason` is `'error'`. */
+  error?: string;
+}
+
+/**
+ * One retrieval candidate as seen by {@link RAGTrace}: identifiers and scores
+ * only, never the passage text, so a trace can be stored or audited without
+ * duplicating document content.
+ */
+export interface RAGTraceCandidate {
+  /** Chunk identifier in the vector store. */
+  id: string;
+  /** Source document identifier. */
+  documentId: string;
+  /** Zero-based chunk index within the document, when known. */
+  chunkIndex?: number;
+  /** Retrieval score after per-collection min-max normalisation, in [0, 1]. */
+  retrievalScore: number;
+  /** Absolute relevance score from the re-ranker (absent when not re-ranked). */
+  rerankScore?: number;
+  /**
+   * Where the candidate ended up:
+   * - `'final'` — returned in {@link RAGResult.passages}.
+   * - `'below_min_score'` — within `finalTopK` but under `minScore`.
+   * - `'beyond_final_top_k'` — ranked below the `finalTopK` cut.
+   */
+  stage: 'final' | 'below_min_score' | 'beyond_final_top_k';
+}
+
+/**
+ * Decision trace of one RAG search: which query was actually searched, every
+ * candidate with its scores, and why each one was kept or dropped.
+ *
+ * Lets a host tell the two "nothing found" cases apart — no candidates at all
+ * versus candidates discarded by `minScore` — and see whether a query rewrite
+ * silently fell back to the original text.
+ */
+export interface RAGTrace {
+  /** The query as received. */
+  originalQuery: string;
+  /** The query actually embedded and searched (after rewriting, if any). */
+  searchQuery: string;
+  /** Query-rewriting step; absent when no rewriter is configured. */
+  rewrite?: {
+    /** Rewriter strategy name (e.g. `'contextual'`). */
+    strategy: string;
+  } & Omit<QueryRewriteOutcome, 'query'>;
+  /** `minScore` applied to the final passages. */
+  minScore: number;
+  /** `finalTopK` applied after re-ranking. */
+  finalTopK: number;
+  /** Candidates returned by the vector store, after de-duplication. */
+  candidateCount: number;
+  /** Passages within `finalTopK` that `minScore` discarded. */
+  droppedByMinScore: number;
+  /** Every candidate, in final ranking order. */
+  candidates: RAGTraceCandidate[];
+}
+
 /**
  * Result returned by the RAG pipeline after search, merge, and re-ranking.
  */
@@ -1571,6 +1647,8 @@ export interface RAGResult {
     /** Tokens consumed if the re-ranker is LLM-based. */
     tokensUsed?: number;
   };
+  /** Decision trace: query used, candidates, scores and cut reasons. */
+  trace: RAGTrace;
 }
 
 /**
@@ -1612,6 +1690,62 @@ export interface RerankerValidation {
 }
 
 /**
+ * Outcome of a query-rewriter health check (`orch.rag.validateQueryRewriter()`).
+ *
+ * A rewriter that cannot reach its model does not fail the search: it keeps
+ * the original query. That makes a misconfiguration (a model the API key has
+ * no access to, a reasoning model with no budget) invisible at query time —
+ * conversational follow-ups are simply searched literally. Probing at startup
+ * is the only place where it surfaces.
+ */
+export interface QueryRewriterValidation {
+  /** Whether a query rewriter is configured for this pipeline. */
+  configured: boolean;
+  /** Strategy name of the configured rewriter (e.g. `'contextual'`). */
+  strategy?: string;
+  /** LLM provider used by the rewriter, when known. */
+  provider?: string;
+  /** Model used by the rewriter, when known. */
+  model?: string;
+  /** Whether the rewriter produced a rewrite for a probe query. */
+  available: boolean;
+  /** Failure description when the probe did not succeed. */
+  error?: string;
+  /** Milliseconds the probe took (absent when no probe was made). */
+  latencyMs?: number;
+}
+
+/**
+ * Health of one configured model, as reported by `orch.validateModels()`.
+ */
+export interface ModelValidation {
+  /** What the model is used for. */
+  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter';
+  /** Whether this role is configured. An unconfigured role is not a failure. */
+  configured: boolean;
+  /** Provider name. */
+  provider?: string;
+  /** Model identifier. */
+  model?: string;
+  /** Whether a real request with this model succeeded. `false` when not configured. */
+  available: boolean;
+  /** Failure description when the probe did not succeed. */
+  error?: string;
+  /** Milliseconds the probe took (absent when no probe was made). */
+  latencyMs?: number;
+}
+
+/**
+ * Result of `orch.validateModels()`: one entry per role.
+ */
+export interface ModelsValidationReport {
+  /** `true` when every configured model is available. */
+  ok: boolean;
+  /** One entry per role, in a fixed order: llm, embedding, reranker, queryRewriter. */
+  models: ModelValidation[];
+}
+
+/**
  * Result of a single text embedding operation.
  */
 export interface EmbeddingResult {
@@ -1647,6 +1781,15 @@ export interface RerankResult {
 export interface FormatOptions {
   /** Include the source reference below each passage. Default: true. */
   includeSource?: boolean;
+  /**
+   * Which metadata field labels the source:
+   * - `'title'` (default) — the human-readable document title, falling back to
+   *   `source` and then `documentId`. Keeps internal paths and URLs out of the
+   *   model's context, so they cannot leak into answers.
+   * - `'source'` — the `source` reference (path or URL), falling back to
+   *   `title` and then `documentId`.
+   */
+  sourceLabel?: 'title' | 'source';
   /** Include the relevance score next to each passage. Default: false. */
   includeScore?: boolean;
   /** Truncate each passage to this character limit before formatting. */

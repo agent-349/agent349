@@ -194,6 +194,11 @@ export class LLMReranker extends RerankerProvider {
     };
   }
 
+  /** Model this re-ranker scores with. */
+  override get model(): string {
+    return this.#model;
+  }
+
   /**
    * Scores one probe passage exactly as {@link rerank} would — same prompt,
    * reasoning effort and token budget — and succeeds only when the reply

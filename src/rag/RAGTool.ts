@@ -1,5 +1,5 @@
 import type { Tool, ExecutionContext, ToolResult, LLMMessage } from '../types/index.js';
-import type { RAGQuery } from './types.js';
+import type { RAGFilter, RAGQuery } from './types.js';
 import type { RAGPipeline } from './RAGPipeline.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,6 +18,17 @@ export interface RAGToolOptions {
    * without history).
    */
   conversationHistory?: (context: ExecutionContext) => Promise<LLMMessage[]>;
+  /**
+   * Filters the host enforces for the calling context — typically the scope
+   * the user chose in the UI (a category, a document set). They are applied
+   * after the model's input, so the model cannot widen or drop them, and
+   * before the security filters (`tenantId`, `accessRoles`), which always win.
+   * Return `undefined` for no extra scope. A failure to resolve them fails the
+   * search: running it unscoped would answer from documents the user excluded.
+   */
+  scopeFilters?: (
+    context: ExecutionContext,
+  ) => Partial<RAGFilter> | undefined | Promise<Partial<RAGFilter> | undefined>;
 }
 
 /**
@@ -158,6 +169,18 @@ export function createRAGTool(
         }
       }
 
+      let scope: Partial<RAGFilter> | undefined;
+      if (options.scopeFilters !== undefined) {
+        try {
+          scope = await options.scopeFilters(context);
+        } catch (err) {
+          return {
+            success: false,
+            error: `RAG search scope could not be resolved: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      }
+
       const ragQuery: RAGQuery = {
         // Defaults applied first; LLM input overrides them.
         ...defaults,
@@ -165,6 +188,8 @@ export function createRAGTool(
         collections: input.collections ?? defaultCollections,
         filters: {
           ...input.filters,
+          // Host-enforced scope: applied over the model's input.
+          ...scope,
           // Automatically inject security context — the LLM cannot override these.
           tenantId: context.tenantId,
           accessRoles: context.roles,

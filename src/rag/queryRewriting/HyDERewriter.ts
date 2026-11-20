@@ -1,7 +1,11 @@
-import type { LLMMessage, LLMRequest } from '../../types/index.js';
+import type { LLMMessage, LLMRequest, ProviderProbe } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
-import { QueryRewriter, rewriteReasoningEffort } from './QueryRewriter.js';
-import type { QueryRewriteFallbackReason, QueryRewriterOptions } from './QueryRewriter.js';
+import { QueryRewriter, probeError, rewriteReasoningEffort } from './QueryRewriter.js';
+import type {
+  QueryRewriteFallbackReason,
+  QueryRewriteOutcome,
+  QueryRewriterOptions,
+} from './QueryRewriter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal constants
@@ -75,6 +79,20 @@ export class HyDERewriter extends QueryRewriter {
    * @param query - Original user query. Conversation history is ignored by HyDE.
    */
   override async rewrite(query: string, _conversationHistory?: LLMMessage[]): Promise<string> {
+    return (await this.rewriteWithOutcome(query)).query;
+  }
+
+  /**
+   * Same as {@link rewrite}, reporting whether the hypothetical passage was
+   * used and, when the original query was kept, why.
+   *
+   * @param query - Original user query. Conversation history is ignored by HyDE.
+   * @returns The query to search with and how it was obtained. Never throws.
+   */
+  override async rewriteWithOutcome(
+    query: string,
+    _conversationHistory?: LLMMessage[],
+  ): Promise<QueryRewriteOutcome> {
     const request: LLMRequest = {
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: query }],
@@ -91,7 +109,7 @@ export class HyDERewriter extends QueryRewriter {
       // A HyDE passage shorter than ~20 chars is probably degenerate — fall back.
       if (hypothetical.length === 0) return this.#fallback(query, 'empty', response.stopReason);
       if (hypothetical.length <= 20) return this.#fallback(query, 'too_short', response.stopReason);
-      return hypothetical;
+      return { query: hypothetical, applied: true };
     } catch (err) {
       // Degrade gracefully — use original query if generation fails.
       return this.#fallback(
@@ -103,12 +121,35 @@ export class HyDERewriter extends QueryRewriter {
     }
   }
 
+  /** LLM provider used to generate hypothetical passages. */
+  override get provider(): string {
+    return this.#provider;
+  }
+
+  /** Model used to generate hypothetical passages. */
+  override get model(): string {
+    return this.#model;
+  }
+
+  /**
+   * Generates a passage for a probe question with the same request
+   * {@link rewrite} sends, and succeeds only when the model answers with a
+   * usable passage.
+   *
+   * @returns The probe outcome. Never throws.
+   */
+  override async validate(): Promise<ProviderProbe> {
+    const outcome = await this.rewriteWithOutcome('How much does the Pro plan cost?');
+    if (outcome.fallbackReason === undefined) return { ok: true };
+    return { ok: false, error: probeError(this.#model, outcome) };
+  }
+
   #fallback(
     query: string,
     reason: QueryRewriteFallbackReason,
     stopReason?: string,
     error?: string,
-  ): string {
+  ): QueryRewriteOutcome {
     this.#options.eventBus?.emit('rag.query_rewrite.fallback', {
       strategy: this.name,
       provider: this.#provider,
@@ -117,6 +158,13 @@ export class HyDERewriter extends QueryRewriter {
       ...(stopReason !== undefined && { stopReason }),
       ...(error !== undefined && { error }),
     });
-    return query;
+    return {
+      query,
+      applied: false,
+      fallbackReason: reason,
+      ...(error !== undefined && { error }),
+      ...(stopReason === 'max_tokens' &&
+        reason !== 'error' && { error: 'reply hit the token limit' }),
+    };
   }
 }

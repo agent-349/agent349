@@ -187,6 +187,11 @@ export class TEIReranker extends RerankerProvider {
     };
   }
 
+  /** Model this re-ranker scores with. */
+  override get model(): string {
+    return this.#modelLabel;
+  }
+
   /**
    * Verifies the TEI `/rerank` endpoint is reachable and correctly configured.
    *

@@ -72,6 +72,36 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **`orch.validateModels()`: probe every configured model at startup.** Sends
+  each role the request it really sends — the default LLM, the RAG embedding
+  model, the re-ranker and the query rewriter — and reports
+  `{ ok, models: [{ role, configured, provider, model, available, error }] }`.
+  A reachability check (listing models) cannot see a model the credentials have
+  no access to, or a reasoning model that spends its budget before answering.
+  Failures go to the audit log (`model.unavailable`,
+  `rag.reranker.unavailable`, `rag.query_rewriter.unavailable`). New
+  `orch.rag.validateQueryRewriter()`, `orch.rag.validateEmbedding()` and
+  `QueryRewriter.validate()`.
+- **RAG search trace.** `RAGResult.trace` reports the query actually searched,
+  the rewrite outcome (applied, or why it fell back), and every candidate with
+  its retrieval and re-rank scores and where it ended up (`final`,
+  `below_min_score`, `beyond_final_top_k`). It carries identifiers and scores,
+  never passage text. A host can now tell "no candidates" from "candidates cut
+  by `minScore`". The audit record of `search_complete` includes the post-cut
+  passage count, `droppedByMinScore` and the candidates; the query text stays
+  out of the audit log.
+- **`QueryRewriter.rewriteWithOutcome()`** returns `{ query, applied,
+fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
+  default built on `rewrite()`.
+- **`createRAGTool({ scopeFilters })`**: filters the host enforces for the
+  calling context (e.g. the category the user selected), applied over the
+  model's input and below the security filters. In agentic retrieval the model
+  could otherwise drop or widen the user's scope. A resolver failure fails the
+  search instead of running it unscoped.
+- **`FormatOptions.sourceLabel`** (`'title'` | `'source'`).
+- **`RerankerProvider.model`** and **`QueryRewriter.provider` / `.model`**
+  (informational getters).
+
 - **Extended JSON in Mongo queries.** `MongoDriver` converts single-key
   `{ $date }`, `{ $oid }`, `{ $numberDecimal }` and `{ $numberLong }` wrappers
   into BSON values before running a filter, pipeline or projection. A model
@@ -81,6 +111,19 @@ series, incompatible behavior changes bump the minor version.
   `reviveExtendedJson` is exported for hosts that build queries themselves.
 
 ### Fixed
+
+- **A failing query rewriter was recorded as a success.** A rewriter never
+  fails the search — on error it keeps the original query — and the audit
+  record of `query_rewrite` said `success` either way. A deployment whose
+  rewriter pointed at a model its API key could not use searched every
+  follow-up question literally for two months, with a clean audit log. The
+  fallback is now recorded as `outcome: 'failure'`, `severity: 'warning'`, with
+  the reason and the provider error.
+- **The re-rank audit count was read as the final count.** `rag.rerank.end`
+  reports passages before `minScore`, so a search that returned nothing showed
+  `finalCount: 5`. The count after the cut is now on `rag.pipeline.complete`
+  (`passageCount`, `droppedByMinScore`), and `rag.rerank.end` adds
+  `candidateCount`. `rag.rerank.error` is now audited.
 
 - **`sql.query` no longer shifts date-time values that have no time zone.** A
   `TIMESTAMP` (PostgreSQL, Oracle), `DATETIME` (MySQL) or Oracle `DATE`
@@ -146,6 +189,18 @@ series, incompatible behavior changes bump the minor version.
 - `TOOLS_MANUAL`: an Oracle function with `PRAGMA AUTONOMOUS_TRANSACTION` writes
   despite the read-only transaction (only grants stop it), date-time handling,
   and the redirect and IPv6 rules.
+
+### Changed
+
+- **`formatForContext()` labels passages with the document title by default**
+  (falling back to `source`, then `documentId`); it used `source` first. The
+  source is often an internal path or URL, and the synthesis model copied it
+  into answers ("Source: /srv/file/…"). Pass `sourceLabel: 'source'` for the
+  previous label. `createRAGTool` follows the new default.
+- **The re-ranker scores every retrieval candidate**, not just `finalTopK`, so
+  the trace can report the scores of the passages below the cut. LLM and
+  cross-encoder re-rankers already read every candidate; the Cohere re-ranker
+  now asks for all of them (`top_n`).
 
 ## [0.5.0] - 2026-09-28
 

@@ -7,6 +7,13 @@ import type {
   RerankerValidation,
   ProviderProbe,
 } from './types.js';
+import type {
+  ModelValidation,
+  QueryRewriteOutcome,
+  QueryRewriterValidation,
+  RAGTrace,
+  RAGTraceCandidate,
+} from '../types/index.js';
 import type { EmbeddingRouter } from './embedding/EmbeddingRouter.js';
 import type { VectorStoreAdapter } from './vectorstore/VectorStoreAdapter.js';
 import type { RerankerProvider } from './reranker/RerankerProvider.js';
@@ -172,6 +179,89 @@ export class RAGPipeline {
   }
 
   /**
+   * Probes the configured query rewriter with a real request.
+   *
+   * A rewriter never fails a search — on any error it keeps the original
+   * query — so a rewriter pointed at a model the credentials cannot access is
+   * otherwise invisible: follow-up questions are just searched literally.
+   * Call this at startup next to {@link validateReranker}.
+   *
+   * Never throws: a failed probe is reported in the returned value.
+   *
+   * @returns A {@link QueryRewriterValidation} describing configuration and reachability.
+   */
+  async validateQueryRewriter(): Promise<QueryRewriterValidation> {
+    const rewriter = this.#queryRewriter;
+    if (rewriter === undefined) {
+      return { configured: false, available: false };
+    }
+
+    const startMs = Date.now();
+    let probe: ProviderProbe;
+    try {
+      probe = await rewriter.validate();
+    } catch (err) {
+      probe = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    const latencyMs = Date.now() - startMs;
+    const identity = {
+      strategy: rewriter.name,
+      ...(rewriter.provider !== undefined && { provider: rewriter.provider }),
+      ...(rewriter.model !== undefined && { model: rewriter.model }),
+    };
+    const error = probe.ok
+      ? undefined
+      : (probe.error ?? 'the query rewriter probe did not succeed');
+
+    this.#bus.emit(probe.ok ? 'rag.query_rewriter.available' : 'rag.query_rewriter.unavailable', {
+      ...identity,
+      latencyMs,
+      ...(error !== undefined && { error }),
+    });
+
+    return {
+      configured: true,
+      ...identity,
+      available: probe.ok,
+      latencyMs,
+      ...(error !== undefined && { error }),
+    };
+  }
+
+  /**
+   * Probes an embedding provider by embedding a short text.
+   *
+   * Never throws: a failed probe is reported in the returned value.
+   *
+   * @param providerName - Embedding provider registered in the router.
+   * @param model        - Model name to report (informational).
+   * @returns A {@link ModelValidation} with role `'embedding'`.
+   */
+  async validateEmbedding(providerName: string, model?: string): Promise<ModelValidation> {
+    const identity = {
+      role: 'embedding' as const,
+      provider: providerName,
+      ...(model !== undefined && { model }),
+    };
+    if (!this.#embedding.listProviders().includes(providerName)) {
+      return { ...identity, configured: false, available: false };
+    }
+    const startMs = Date.now();
+    try {
+      await this.#embedding.embed('health check', providerName);
+      return { ...identity, configured: true, available: true, latencyMs: Date.now() - startMs };
+    } catch (err) {
+      return {
+        ...identity,
+        configured: true,
+        available: false,
+        latencyMs: Date.now() - startMs,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /**
    * Runs the full RAG pipeline for the given query.
    *
    * @param ragQuery - Search parameters including query text, collections, and options.
@@ -213,11 +303,24 @@ export class RAGPipeline {
     // ── 0. QUERY REWRITING (optional) ────────────────────────────────────────
     let query = rawQuery;
     let queryRewriteLatencyMs: number | undefined;
+    let rewriteOutcome: QueryRewriteOutcome | undefined;
     if (this.#queryRewriter !== undefined) {
       const rewriteStart = Date.now();
-      query = await this.#queryRewriter.rewrite(rawQuery, conversationHistory);
+      rewriteOutcome = await this.#queryRewriter.rewriteWithOutcome(rawQuery, conversationHistory);
+      query = rewriteOutcome.query;
       queryRewriteLatencyMs = Date.now() - rewriteStart;
-      emit('rag.query_rewrite.end', { latencyMs: queryRewriteLatencyMs });
+      // A fallback is reported here, with the request context, so it reaches
+      // the audit log attributed to the query that suffered it.
+      emit('rag.query_rewrite.end', {
+        latencyMs: queryRewriteLatencyMs,
+        strategy: this.#queryRewriter.name,
+        applied: rewriteOutcome.applied,
+        ...(this.#queryRewriter.model !== undefined && { model: this.#queryRewriter.model }),
+        ...(rewriteOutcome.fallbackReason !== undefined && {
+          fallbackReason: rewriteOutcome.fallbackReason,
+        }),
+        ...(rewriteOutcome.error !== undefined && { error: rewriteOutcome.error }),
+      });
     }
 
     // ── 1. EMBED ────────────────────────────────────────────────────────────
@@ -302,6 +405,7 @@ export class RAGPipeline {
 
     // ── 4. RERANK (optional) ────────────────────────────────────────────────
     let finalPassages: Passage[];
+    let rankedAll: Passage[] = [];
     let rerankLatencyMs: number | undefined;
     let rerankTokens: number | undefined;
     let reranked = false;
@@ -335,8 +439,12 @@ export class RAGPipeline {
           );
         }
 
-        const rerankResult = await this.#reranker.rerank(query, merged, finalTopK);
-        finalPassages = rerankResult.passages;
+        // Score every candidate, not just the top `finalTopK`: the re-ranker
+        // reads them all anyway, and the scores of the ones below the cut are
+        // what the trace needs to explain a missing passage.
+        const rerankResult = await this.#reranker.rerank(query, merged, merged.length);
+        rankedAll = rerankResult.passages;
+        finalPassages = rankedAll.slice(0, finalTopK);
 
         rerankLatencyMs = Date.now() - rerankStart;
         rerankTokens = rerankResult.tokensUsed;
@@ -344,7 +452,9 @@ export class RAGPipeline {
 
         emit('rag.rerank.end', {
           latencyMs: rerankLatencyMs,
+          // Before `minScore`: the count after the cut is in `rag.pipeline.complete`.
           finalCount: finalPassages.length,
+          candidateCount: merged.length,
         });
 
         // Track reranker token usage if reported.
@@ -381,20 +491,38 @@ export class RAGPipeline {
           );
         }
 
-        finalPassages = merged.sort((a, b) => b.score - a.score).slice(0, finalTopK);
+        rankedAll = [...merged].sort((a, b) => b.score - a.score);
+        finalPassages = rankedAll.slice(0, finalTopK);
       }
     } else {
       // No re-ranking requested, or no re-ranker configured at all. The policy
       // deliberately does not apply here: it governs the failure of a re-ranker
       // the deployment chose to run, not the absence of one. A re-ranker that is
       // configured but unreachable is caught at startup by `validateReranker()`.
-      finalPassages = merged.sort((a, b) => b.score - a.score).slice(0, finalTopK);
+      rankedAll = [...merged].sort((a, b) => b.score - a.score);
+      finalPassages = rankedAll.slice(0, finalTopK);
     }
 
     // ── 5. FILTER BY minScore ────────────────────────────────────────────────
+    const beforeMinScore = finalPassages.length;
     if (minScore > 0) {
       finalPassages = finalPassages.filter((p) => p.score >= minScore);
     }
+
+    const trace = buildTrace({
+      originalQuery: rawQuery,
+      searchQuery: query,
+      ...(rewriteOutcome !== undefined &&
+        this.#queryRewriter !== undefined && {
+          rewrite: { strategy: this.#queryRewriter.name, outcome: rewriteOutcome },
+        }),
+      merged,
+      rankedAll,
+      reranked,
+      finalTopK,
+      minScore,
+      droppedByMinScore: beforeMinScore - finalPassages.length,
+    });
 
     const totalLatencyMs = Date.now() - pipelineStart;
     const metrics = {
@@ -406,7 +534,13 @@ export class RAGPipeline {
       ...(rerankTokens !== undefined && { tokensUsed: rerankTokens + embResult.tokensUsed }),
     };
 
-    emit('rag.pipeline.complete', { totalLatencyMs, metrics });
+    emit('rag.pipeline.complete', {
+      totalLatencyMs,
+      metrics,
+      passageCount: finalPassages.length,
+      droppedByMinScore: trace.droppedByMinScore,
+      trace,
+    });
 
     return {
       passages: finalPassages,
@@ -416,6 +550,7 @@ export class RAGPipeline {
       searchMode,
       reranked,
       metrics,
+      trace,
     };
   }
 
@@ -430,6 +565,7 @@ export class RAGPipeline {
   formatForContext(passages: Passage[], options: FormatOptions = {}): string {
     const {
       includeSource = true,
+      sourceLabel = 'title',
       includeScore = false,
       maxCharsPerPassage,
       template,
@@ -440,7 +576,10 @@ export class RAGPipeline {
       const content =
         maxCharsPerPassage !== undefined ? p.content.slice(0, maxCharsPerPassage) : p.content;
 
-      const source = p.metadata.source ?? p.metadata.title ?? p.metadata.documentId;
+      const source =
+        sourceLabel === 'source'
+          ? (p.metadata.source ?? p.metadata.title ?? p.metadata.documentId)
+          : (p.metadata.title ?? p.metadata.source ?? p.metadata.documentId);
 
       if (template !== undefined) {
         return template.replace('{{content}}', content).replace('{{source}}', source);
@@ -459,6 +598,65 @@ export class RAGPipeline {
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Inputs of {@link buildTrace}. */
+interface TraceInput {
+  originalQuery: string;
+  searchQuery: string;
+  rewrite?: { strategy: string; outcome: QueryRewriteOutcome };
+  /** De-duplicated candidates with their normalised retrieval scores. */
+  merged: Passage[];
+  /** Every candidate in final ranking order (re-ranker scores when re-ranked). */
+  rankedAll: Passage[];
+  reranked: boolean;
+  finalTopK: number;
+  minScore: number;
+  droppedByMinScore: number;
+}
+
+/**
+ * Builds the {@link RAGTrace} of one search: identifiers and scores of every
+ * candidate, and where each one ended up.
+ */
+function buildTrace(input: TraceInput): RAGTrace {
+  const retrievalScore = new Map(input.merged.map((p) => [p.id, p.score]));
+  const candidates: RAGTraceCandidate[] = input.rankedAll.map((p, index) => {
+    let stage: RAGTraceCandidate['stage'];
+    if (index >= input.finalTopK) stage = 'beyond_final_top_k';
+    else if (input.minScore > 0 && p.score < input.minScore) stage = 'below_min_score';
+    else stage = 'final';
+    return {
+      id: p.id,
+      documentId: p.metadata.documentId,
+      ...(p.metadata.chunkIndex !== undefined && { chunkIndex: p.metadata.chunkIndex }),
+      retrievalScore: retrievalScore.get(p.id) ?? p.score,
+      ...(input.reranked && { rerankScore: p.score }),
+      stage,
+    };
+  });
+
+  let rewrite: RAGTrace['rewrite'];
+  if (input.rewrite !== undefined) {
+    const { outcome } = input.rewrite;
+    rewrite = {
+      strategy: input.rewrite.strategy,
+      applied: outcome.applied,
+      ...(outcome.fallbackReason !== undefined && { fallbackReason: outcome.fallbackReason }),
+      ...(outcome.error !== undefined && { error: outcome.error }),
+    };
+  }
+
+  return {
+    originalQuery: input.originalQuery,
+    searchQuery: input.searchQuery,
+    ...(rewrite !== undefined && { rewrite }),
+    minScore: input.minScore,
+    finalTopK: input.finalTopK,
+    candidateCount: input.merged.length,
+    droppedByMinScore: input.droppedByMinScore,
+    candidates,
+  };
+}
 
 /**
  * Merges passages from multiple collections by:

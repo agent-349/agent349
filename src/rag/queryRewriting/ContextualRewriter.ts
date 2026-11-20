@@ -1,7 +1,11 @@
-import type { LLMMessage, LLMRequest } from '../../types/index.js';
+import type { LLMMessage, LLMRequest, ProviderProbe } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
-import { QueryRewriter, rewriteReasoningEffort } from './QueryRewriter.js';
-import type { QueryRewriteFallbackReason, QueryRewriterOptions } from './QueryRewriter.js';
+import { QueryRewriter, probeError, rewriteReasoningEffort } from './QueryRewriter.js';
+import type {
+  QueryRewriteFallbackReason,
+  QueryRewriteOutcome,
+  QueryRewriterOptions,
+} from './QueryRewriter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal constants
@@ -79,8 +83,23 @@ export class ContextualRewriter extends QueryRewriter {
    * @param conversationHistory - Recent conversation messages.
    */
   override async rewrite(query: string, conversationHistory?: LLMMessage[]): Promise<string> {
+    return (await this.rewriteWithOutcome(query, conversationHistory)).query;
+  }
+
+  /**
+   * Same as {@link rewrite}, reporting whether the rewrite was applied and,
+   * when the original query was kept after an attempt, why.
+   *
+   * @param query               - Original user query.
+   * @param conversationHistory - Recent conversation messages.
+   * @returns The query to search with and how it was obtained. Never throws.
+   */
+  override async rewriteWithOutcome(
+    query: string,
+    conversationHistory?: LLMMessage[],
+  ): Promise<QueryRewriteOutcome> {
     if (conversationHistory === undefined || conversationHistory.length === 0) {
-      return query;
+      return { query, applied: false };
     }
 
     const recentHistory = conversationHistory.slice(-this.#historyWindow);
@@ -113,7 +132,7 @@ export class ContextualRewriter extends QueryRewriter {
       // Fallback if the LLM returns empty or implausibly long output.
       if (rewritten.length === 0) return this.#fallback(query, 'empty', response.stopReason);
       if (rewritten.length >= 500) return this.#fallback(query, 'too_long', response.stopReason);
-      return rewritten;
+      return { query: rewritten, applied: rewritten !== query };
     } catch (err) {
       // Degrade gracefully — use original query if rewriting fails.
       return this.#fallback(
@@ -125,12 +144,43 @@ export class ContextualRewriter extends QueryRewriter {
     }
   }
 
+  /** LLM provider used for rewriting. */
+  override get provider(): string {
+    return this.#provider;
+  }
+
+  /** Model used for rewriting. */
+  override get model(): string {
+    return this.#model;
+  }
+
+  /**
+   * Rewrites a probe follow-up against a probe history with the same request
+   * {@link rewrite} sends, and succeeds only when the model answers with a
+   * usable rewrite. Catches a model the credentials cannot access and a
+   * reasoning model whose budget is spent before it answers — both of which
+   * {@link rewrite} absorbs by silently keeping the original query.
+   *
+   * @returns The probe outcome. Never throws.
+   */
+  override async validate(): Promise<ProviderProbe> {
+    const outcome = await this.rewriteWithOutcome('And how much does it cost?', [
+      { role: 'user', content: 'Tell me about the Pro plan.' },
+      {
+        role: 'assistant',
+        content: 'The Pro plan includes unlimited projects and priority support.',
+      },
+    ]);
+    if (outcome.fallbackReason === undefined) return { ok: true };
+    return { ok: false, error: probeError(this.#model, outcome) };
+  }
+
   #fallback(
     query: string,
     reason: QueryRewriteFallbackReason,
     stopReason?: string,
     error?: string,
-  ): string {
+  ): QueryRewriteOutcome {
     this.#options.eventBus?.emit('rag.query_rewrite.fallback', {
       strategy: this.name,
       provider: this.#provider,
@@ -139,6 +189,13 @@ export class ContextualRewriter extends QueryRewriter {
       ...(stopReason !== undefined && { stopReason }),
       ...(error !== undefined && { error }),
     });
-    return query;
+    return {
+      query,
+      applied: false,
+      fallbackReason: reason,
+      ...(error !== undefined && { error }),
+      ...(stopReason === 'max_tokens' &&
+        reason !== 'error' && { error: 'reply hit the token limit' }),
+    };
   }
 }

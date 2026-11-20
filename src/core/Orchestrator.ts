@@ -18,6 +18,8 @@ import type {
   Tool,
   ToolResult,
   ProviderProbe,
+  ModelValidation,
+  ModelsValidationReport,
 } from '../types/index.js';
 import {
   AccessDeniedError,
@@ -2153,6 +2155,115 @@ export class Orchestrator {
     this.#rerankerOverride = reranker;
     if (this.#ragFacade !== undefined) {
       this.#ragFacade.pipeline.setReranker(reranker);
+    }
+  }
+
+  /**
+   * Probes every configured model with a real request: the default LLM and,
+   * unless `options.rag` is `false`, the RAG embedding model, re-ranker and
+   * query rewriter.
+   *
+   * Intended for application startup. Each probe is the request the role
+   * actually sends, so it catches what a reachability check cannot: a model
+   * the credentials have no access to, or a reasoning model whose token budget
+   * runs out before it answers. That matters most for the query rewriter,
+   * which never fails a search — it silently keeps the original query.
+   *
+   * Every configured model that fails is reported on the bus — as
+   * `model.unavailable` (LLM, embedding), `rag.reranker.unavailable` or
+   * `rag.query_rewriter.unavailable` — so the failure reaches the audit log. Never throws: the outcome is in the report,
+   * and whether a failure should block startup is the host's decision.
+   *
+   * @param options.rag - Probe the RAG models too. Default: `true`.
+   * @returns A {@link ModelsValidationReport} with one entry per role.
+   */
+  async validateModels(options: { rag?: boolean } = {}): Promise<ModelsValidationReport> {
+    const models: ModelValidation[] = [await this.#validateLLM()];
+
+    if (options.rag !== false) {
+      const rag = this.rag;
+      models.push(await rag.validateEmbedding());
+
+      const reranker = await rag.validateReranker();
+      const rerankerModel = rag.pipeline.reranker?.model;
+      models.push({
+        role: 'reranker',
+        configured: reranker.configured,
+        ...(reranker.provider !== undefined && { provider: reranker.provider }),
+        ...(rerankerModel !== undefined && { model: rerankerModel }),
+        available: reranker.available,
+        ...(reranker.error !== undefined && { error: reranker.error }),
+        ...(reranker.latencyMs !== undefined && { latencyMs: reranker.latencyMs }),
+      });
+
+      const rewriter = await rag.validateQueryRewriter();
+      models.push({
+        role: 'queryRewriter',
+        configured: rewriter.configured,
+        ...(rewriter.provider !== undefined && { provider: rewriter.provider }),
+        ...(rewriter.model !== undefined && { model: rewriter.model }),
+        available: rewriter.available,
+        ...(rewriter.error !== undefined && { error: rewriter.error }),
+        ...(rewriter.latencyMs !== undefined && { latencyMs: rewriter.latencyMs }),
+      });
+    }
+
+    // The re-ranker and query rewriter probes already emit their own
+    // `rag.*.unavailable` events; only the roles probed here need one.
+    for (const m of models) {
+      if ((m.role === 'llm' || m.role === 'embedding') && m.configured && !m.available) {
+        this.#bus.emit('model.unavailable', {
+          role: m.role,
+          provider: m.provider,
+          model: m.model,
+          error: m.error,
+        });
+      }
+    }
+
+    return { ok: models.every((m) => !m.configured || m.available), models };
+  }
+
+  /** Probes the default LLM provider and model with a minimal completion. */
+  async #validateLLM(): Promise<ModelValidation> {
+    const provider = this.#config.llm.defaultProvider ?? this.#firstAvailableProvider();
+    // Same precedence an agent without its own model uses (see runAgent).
+    const model =
+      this.#config.llm.defaultModel ??
+      (provider !== undefined ? this.#config.llm.providers[provider]?.defaultModel : undefined);
+    const identity = {
+      role: 'llm' as const,
+      ...(provider !== undefined && { provider }),
+      ...(model !== undefined && { model }),
+    };
+    if (
+      provider === undefined ||
+      model === undefined ||
+      this.#router.getProvider(provider) === undefined
+    ) {
+      return { ...identity, configured: false, available: false };
+    }
+    const startMs = Date.now();
+    try {
+      await this.#router.call(
+        {
+          systemPrompt: 'You are a health check. Reply with the word OK.',
+          messages: [{ role: 'user', content: 'Health check.' }],
+          model,
+          maxTokens: 64,
+          reasoningEffort: 'minimal',
+        },
+        provider,
+      );
+      return { ...identity, configured: true, available: true, latencyMs: Date.now() - startMs };
+    } catch (err) {
+      return {
+        ...identity,
+        configured: true,
+        available: false,
+        latencyMs: Date.now() - startMs,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 

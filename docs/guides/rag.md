@@ -276,6 +276,34 @@ for (const p of result.passages)
 console.log('latency', result.metrics.totalLatencyMs, 'ms');
 ```
 
+### Search trace
+
+`result.trace` explains the result: the query actually searched (after any
+rewrite), whether the rewrite was applied or why it fell back, and every
+candidate with its scores and where it ended up. It carries identifiers and
+scores only, never passage text, so it can be stored next to a conversation.
+
+```ts
+const { passages, trace } = await orch.rag.search(
+  { query: 'remote work policy', collections: ['hr-policies'], rerank: true, minScore: 0.25 },
+  context,
+);
+if (trace.rewrite?.fallbackReason !== undefined)
+  console.warn('rewrite fell back:', trace.rewrite.fallbackReason, trace.rewrite.error);
+if (passages.length === 0)
+  console.log(
+    trace.candidateCount === 0
+      ? 'no candidates'
+      : `${trace.droppedByMinScore} candidates below minScore ${trace.minScore}`,
+  );
+for (const c of trace.candidates)
+  console.log(c.documentId, c.chunkIndex, c.retrievalScore, c.rerankScore, c.stage);
+```
+
+`formatForContext()` labels each passage with the document title (falling back
+to `source`, then `documentId`), so internal paths and URLs do not reach the
+model. Pass `{ sourceLabel: 'source' }` to label with the source instead.
+
 ## Access control
 
 When an agent searches through the `rag.search` tool, the tool adds the
@@ -301,8 +329,19 @@ acl.addPolicy({ resourceType: 'tool', resourceId: 'rag.search', allowedRoles: ['
   is always 1.0), so `minScore` cannot tell "no relevant result" apart from
   "some result". Enable a reranker if that distinction matters.
 - `rerankPolicy: "require"` fails the search when the reranker is down.
-  `"degrade"` falls back to un-reranked results. Call
-  `orch.rag.validateReranker()` at startup to catch configuration errors early.
+  `"degrade"` falls back to un-reranked results.
+- Call `orch.validateModels()` at startup. It sends each configured model —
+  default LLM, embedding, reranker, query rewriter — the request it really
+  sends, and reports which ones fail. The query rewriter needs it most: a
+  rewriter that cannot reach its model never fails a search, it silently
+  searches the original text, so conversational follow-ups lose their context.
+
+  ```ts
+  const report = await orch.validateModels();
+  for (const m of report.models)
+    if (m.configured && !m.available) console.error(`${m.role} ${m.model}: ${m.error}`);
+  ```
+
 - Embeddings and LLM reranking are recorded in token accounting, attributed to
   `rag.ingest` and `rag.search`.
 

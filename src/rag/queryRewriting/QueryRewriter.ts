@@ -1,4 +1,10 @@
-import type { LLMMessage, LLMRequest } from '../../types/index.js';
+import type {
+  LLMMessage,
+  LLMRequest,
+  ProviderProbe,
+  QueryRewriteFallbackReason,
+  QueryRewriteOutcome,
+} from '../../types/index.js';
 import type { EventBus } from '../../events/EventBus.js';
 
 /** Options shared by the built-in LLM query rewriters. */
@@ -15,8 +21,7 @@ export interface QueryRewriterOptions {
   eventBus?: EventBus;
 }
 
-/** Why a rewriter kept the original query. */
-export type QueryRewriteFallbackReason = 'error' | 'empty' | 'too_long' | 'too_short';
+export type { QueryRewriteFallbackReason, QueryRewriteOutcome };
 
 /** Default reasoning effort of the built-in rewriters. */
 export const DEFAULT_REWRITE_REASONING_EFFORT: LLMRequest['reasoningEffort'] = 'minimal';
@@ -30,6 +35,31 @@ export function rewriteReasoningEffort(
       ? DEFAULT_REWRITE_REASONING_EFFORT
       : options.reasoningEffort;
   return effort === null || effort === undefined ? {} : { reasoningEffort: effort };
+}
+
+/**
+ * Failure description for a rewriter probe that fell back to the original query.
+ *
+ * @internal Shared by the built-in rewriters.
+ */
+export function probeError(model: string, outcome: QueryRewriteOutcome): string {
+  switch (outcome.fallbackReason) {
+    case 'error':
+      return outcome.error ?? `model '${model}' request failed`;
+    case 'empty':
+      return (
+        `model '${model}' returned an empty rewrite` +
+        (outcome.error !== undefined
+          ? ` (${outcome.error}; lower rag.queryRewriting.reasoningEffort)`
+          : '')
+      );
+    case 'too_long':
+      return `model '${model}' returned an implausibly long rewrite`;
+    case 'too_short':
+      return `model '${model}' returned a degenerate (too short) rewrite`;
+    default:
+      return `model '${model}' did not produce a rewrite`;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,4 +103,49 @@ export abstract class QueryRewriter {
    *          original query on any LLM error.
    */
   abstract rewrite(query: string, conversationHistory?: LLMMessage[]): Promise<string>;
+
+  /** LLM provider used by this rewriter, when it uses one. */
+  get provider(): string | undefined {
+    return undefined;
+  }
+
+  /** Model used by this rewriter, when it uses one. */
+  get model(): string | undefined {
+    return undefined;
+  }
+
+  /**
+   * Rewrites the query and reports whether the rewrite was applied, and why
+   * not when it fell back to the original. The RAG pipeline calls this method
+   * so the outcome reaches the search trace and the audit log.
+   *
+   * The default implementation wraps {@link rewrite} and can only tell whether
+   * the text changed. The built-in rewriters override it to report the
+   * fallback reason as well.
+   *
+   * @param query               - Original user query.
+   * @param conversationHistory - Recent messages for context-aware strategies.
+   * @returns The query to search with and how it was obtained. Never throws.
+   */
+  async rewriteWithOutcome(
+    query: string,
+    conversationHistory?: LLMMessage[],
+  ): Promise<QueryRewriteOutcome> {
+    const rewritten = await this.rewrite(query, conversationHistory);
+    return { query: rewritten, applied: rewritten !== query };
+  }
+
+  /**
+   * Probes the rewriter with a real request and reports whether it can
+   * produce rewrites. Intended for startup checks: a failing rewriter never
+   * fails a search, it silently keeps the original query.
+   *
+   * The default implementation reports success; rewriters that call a model
+   * override it.
+   *
+   * @returns The probe outcome. Never throws.
+   */
+  async validate(): Promise<ProviderProbe> {
+    return { ok: true };
+  }
 }

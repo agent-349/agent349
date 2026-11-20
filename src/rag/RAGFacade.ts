@@ -1,4 +1,10 @@
-import type { ExecutionContext, CollectionConfig, DocumentMetadata } from '../types/index.js';
+import type {
+  ExecutionContext,
+  CollectionConfig,
+  DocumentMetadata,
+  ModelValidation,
+  QueryRewriterValidation,
+} from '../types/index.js';
 import type { RAGQuery, RAGResult, RAGFilter, RerankerValidation } from './types.js';
 import type { RAGPipeline } from './RAGPipeline.js';
 import type { IngestionPipeline } from './ingestion/IngestionPipeline.js';
@@ -238,6 +244,32 @@ export class RAGFacade {
    */
   async validateReranker(): Promise<RerankerValidation> {
     return this.#ragPipeline.validateReranker();
+  }
+
+  /**
+   * Probes the configured query rewriter with a real request. A rewriter that
+   * cannot reach its model never fails a search — it silently keeps the
+   * original query — so this startup check is where the problem surfaces.
+   * Never throws — inspect the returned value.
+   *
+   * @returns A {@link QueryRewriterValidation} describing configuration and reachability.
+   */
+  async validateQueryRewriter(): Promise<QueryRewriterValidation> {
+    return this.#ragPipeline.validateQueryRewriter();
+  }
+
+  /**
+   * Probes the default embedding provider by embedding a short text.
+   * Never throws — inspect the returned value.
+   *
+   * @returns A {@link ModelValidation} with role `'embedding'`.
+   */
+  async validateEmbedding(): Promise<ModelValidation> {
+    const { embeddingProvider, embeddingModel } = this.#embeddingDefaults;
+    const model = embeddingModel.startsWith(`${embeddingProvider}/`)
+      ? embeddingModel.slice(embeddingProvider.length + 1)
+      : embeddingModel;
+    return this.#ragPipeline.validateEmbedding(embeddingProvider, model);
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -212,14 +212,31 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     detail: { summary: `Tool ${data.toolName as string} failed` },
   }),
 
-  'rag.query_rewrite.end': (data) => ({
-    category: 'rag',
-    action: 'query_rewrite',
-    outcome: 'success',
-    severity: 'info',
-    detail: { summary: 'RAG query rewrite completed' },
-    metrics: { durationMs: data.latencyMs as number },
-  }),
+  'rag.query_rewrite.end': (data) => {
+    // A rewriter never fails the search: on error it keeps the original query.
+    // Recording that as a success hid a misconfigured rewriter for months, so a
+    // fallback is a failure here even though the search went on.
+    const fellBack = data.fallbackReason !== undefined;
+    return {
+      category: 'rag',
+      action: 'query_rewrite',
+      outcome: fellBack ? 'failure' : 'success',
+      severity: fellBack ? 'warning' : 'info',
+      detail: {
+        summary: fellBack
+          ? `RAG query rewrite fell back to the original query (${data.fallbackReason as string})`
+          : 'RAG query rewrite completed',
+        output: {
+          ...(data.strategy !== undefined && { strategy: data.strategy }),
+          ...(data.model !== undefined && { model: data.model }),
+          ...(data.applied !== undefined && { applied: data.applied }),
+          ...(fellBack && { fallbackReason: data.fallbackReason }),
+        },
+        ...(data.error !== undefined && { error: data.error as string }),
+      },
+      metrics: { durationMs: data.latencyMs as number },
+    };
+  },
 
   'rag.embed.end': (data) => ({
     category: 'rag',
@@ -249,18 +266,100 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     severity: 'info',
     detail: {
       summary: 'RAG reranking completed',
-      output: { finalCount: data.finalCount },
+      output: {
+        finalCount: data.finalCount,
+        ...(data.candidateCount !== undefined && { candidateCount: data.candidateCount }),
+      },
     },
     metrics: { durationMs: data.latencyMs as number },
   }),
 
-  'rag.pipeline.complete': (data) => ({
+  'rag.pipeline.complete': (data) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- event payload
+    const trace = data.trace as Record<string, any> | undefined;
+    return {
+      category: 'rag',
+      action: 'search_complete',
+      outcome: 'success',
+      severity: 'info',
+      detail: {
+        summary: 'RAG pipeline search completed',
+        output: {
+          ...(data.metrics as Record<string, unknown>),
+          ...(data.passageCount !== undefined && { passageCount: data.passageCount }),
+          ...(data.droppedByMinScore !== undefined && {
+            droppedByMinScore: data.droppedByMinScore,
+          }),
+          // Identifiers and scores only — never query or passage text.
+          ...(trace !== undefined && {
+            minScore: trace.minScore,
+            finalTopK: trace.finalTopK,
+            candidateCount: trace.candidateCount,
+            ...(trace.rewrite !== undefined && { rewrite: trace.rewrite }),
+            candidates: trace.candidates,
+          }),
+        },
+      },
+      metrics: { durationMs: data.totalLatencyMs as number },
+    };
+  },
+
+  'rag.rerank.error': (data) => ({
     category: 'rag',
-    action: 'search_complete',
-    outcome: 'success',
-    severity: 'info',
-    detail: { summary: 'RAG pipeline search completed', output: data.metrics },
-    metrics: { durationMs: data.totalLatencyMs as number },
+    action: 'rerank_error',
+    outcome: 'error',
+    severity: 'critical',
+    detail: {
+      summary: 'RAG re-ranking failed',
+      ...(data.policy !== undefined && { output: { policy: data.policy } }),
+      ...(data.error !== undefined && { error: data.error as string }),
+    },
+  }),
+
+  'rag.reranker.unavailable': (data) => ({
+    category: 'rag',
+    action: 'reranker_unavailable',
+    outcome: 'error',
+    severity: 'critical',
+    detail: {
+      summary: `RAG re-ranker '${data.provider as string}' unavailable`,
+      output: { provider: data.provider },
+      ...(data.error !== undefined && { error: data.error as string }),
+    },
+    metrics: { durationMs: data.latencyMs as number },
+  }),
+
+  'rag.query_rewriter.unavailable': (data) => ({
+    category: 'rag',
+    action: 'query_rewriter_unavailable',
+    outcome: 'error',
+    severity: 'critical',
+    detail: {
+      summary: `RAG query rewriter '${data.strategy as string}' unavailable`,
+      output: {
+        strategy: data.strategy,
+        ...(data.provider !== undefined && { provider: data.provider }),
+        ...(data.model !== undefined && { model: data.model }),
+      },
+      ...(data.error !== undefined && { error: data.error as string }),
+    },
+    metrics: { durationMs: data.latencyMs as number },
+  }),
+
+  'model.unavailable': (data) => ({
+    category: 'llm',
+    action: 'model_unavailable',
+    outcome: 'error',
+    severity: 'critical',
+    detail: {
+      summary: `Configured ${data.role as string} model unavailable`,
+      output: {
+        role: data.role,
+        ...(data.provider !== undefined && { provider: data.provider }),
+        ...(data.model !== undefined && { model: data.model }),
+      },
+      ...(data.error !== undefined && { error: data.error as string }),
+    },
   }),
 
   'rag.chat.stage': (data) => ({

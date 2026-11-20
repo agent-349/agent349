@@ -152,6 +152,11 @@ export class CohereReranker extends RerankerProvider {
     };
   }
 
+  /** Model this re-ranker scores with. */
+  override get model(): string {
+    return this.#model;
+  }
+
   /** @inheritdoc */
   override async validate(): Promise<ProviderProbe> {
     try {
