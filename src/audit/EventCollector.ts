@@ -304,6 +304,32 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     };
   },
 
+  'rag.query_expansion.end': (data) => {
+    // Variant texts derive from the user's question: counts only, like the query.
+    const failed = data.error !== undefined;
+    return {
+      category: 'rag',
+      action: 'query_expansion',
+      outcome: failed ? 'failure' : 'success',
+      severity: failed ? 'warning' : 'info',
+      detail: {
+        summary: failed
+          ? 'RAG query expansion failed; the search went on without variants'
+          : `RAG query expanded (${data.reason as string})`,
+        output: {
+          mode: data.mode,
+          reason: data.reason,
+          variants: data.variants,
+          candidatesBefore: data.candidatesBefore,
+          candidatesAfter: data.candidatesAfter,
+          ...(data.model !== undefined && { model: data.model }),
+        },
+        ...(failed && { error: data.error as string }),
+      },
+      metrics: { durationMs: data.latencyMs as number },
+    };
+  },
+
   'rag.rerank.error': (data) => ({
     category: 'rag',
     action: 'rerank_error',

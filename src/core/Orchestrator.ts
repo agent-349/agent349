@@ -120,6 +120,8 @@ import { TEIReranker } from '../rag/reranker/TEIReranker.js';
 import type { RerankerProvider } from '../rag/reranker/RerankerProvider.js';
 import { ContextualRewriter } from '../rag/queryRewriting/ContextualRewriter.js';
 import { HyDERewriter } from '../rag/queryRewriting/HyDERewriter.js';
+import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
+import type { RAGPipelineExpansionOptions } from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
 import type { ACLService } from '../security/ACLService.js';
 import type { SecurityMiddlewareChain } from '../security/middleware/SecurityMiddlewareChain.js';
@@ -2198,8 +2200,8 @@ export class Orchestrator {
 
   /**
    * Probes every configured model with a real request: the default LLM and,
-   * unless `options.rag` is `false`, the RAG embedding model, re-ranker and
-   * query rewriter.
+   * unless `options.rag` is `false`, the RAG embedding model, re-ranker, query
+   * rewriter and query expander.
    *
    * Intended for application startup. Each probe is the request the role
    * actually sends, so it catches what a reachability check cannot: a model
@@ -2236,6 +2238,7 @@ export class Orchestrator {
       });
 
       const rewriter = await rag.validateQueryRewriter();
+      const expander = await rag.pipeline.validateQueryExpander();
       models.push({
         role: 'queryRewriter',
         configured: rewriter.configured,
@@ -2245,6 +2248,7 @@ export class Orchestrator {
         ...(rewriter.error !== undefined && { error: rewriter.error }),
         ...(rewriter.latencyMs !== undefined && { latencyMs: rewriter.latencyMs }),
       });
+      models.push(expander);
     }
 
     // Announced retirements, from the pricing catalog: a model that answers
@@ -2268,7 +2272,11 @@ export class Orchestrator {
     // The re-ranker and query rewriter probes already emit their own
     // `rag.*.unavailable` events; only the roles probed here need one.
     for (const m of models) {
-      if ((m.role === 'llm' || m.role === 'embedding') && m.configured && !m.available) {
+      if (
+        (m.role === 'llm' || m.role === 'embedding' || m.role === 'queryExpander') &&
+        m.configured &&
+        !m.available
+      ) {
         this.#bus.emit('model.unavailable', {
           role: m.role,
           provider: m.provider,
@@ -2353,6 +2361,7 @@ export class Orchestrator {
       this.#tokens,
       queryRewriter,
       ragCfg.retrieval.rerankPolicy,
+      this.#buildQueryExpansion(ragCfg.queryExpansion),
     );
 
     const loaderRegistry = new DocumentLoaderRegistry();
@@ -2544,6 +2553,32 @@ export class Orchestrator {
     }
 
     return undefined;
+  }
+
+  /**
+   * The query expander and expansion options of `rag.queryExpansion`. The
+   * expander is built whenever the section exists — even with `mode: 'off'`
+   * — so a single search can still ask for `expansion: 'always'`.
+   */
+  #buildQueryExpansion(qeCfg: SDKConfig['rag']['queryExpansion'] | undefined): {
+    queryExpander?: QueryExpander;
+    expansion?: RAGPipelineExpansionOptions;
+  } {
+    if (qeCfg === undefined) return {};
+    const model = qeCfg.model ?? this.#config.llm.defaultModel ?? 'claude-haiku-4-5';
+    const provider = qeCfg.llmProvider ?? this.#config.llm.defaultProvider ?? 'claude';
+    return {
+      queryExpander: new QueryExpander(this.#router, provider, model, {
+        ...(qeCfg.variants !== undefined && { variants: qeCfg.variants }),
+        ...(qeCfg.reasoningEffort !== undefined && { reasoningEffort: qeCfg.reasoningEffort }),
+        ...(qeCfg.context !== undefined && { context: qeCfg.context }),
+      }),
+      expansion: {
+        mode: qeCfg.mode ?? 'off',
+        ...(qeCfg.fallbackBelow !== undefined && { fallbackBelow: qeCfg.fallbackBelow }),
+        ...(qeCfg.maxCandidates !== undefined && { maxCandidates: qeCfg.maxCandidates }),
+      },
+    };
   }
 
   #buildQueryRewriter(

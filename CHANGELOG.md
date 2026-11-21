@@ -72,6 +72,22 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **Query expansion (multi-query retrieval).** New `rag.queryExpansion`
+  section: a small model (`QueryExpander`) rewrites the question into 1–5
+  alternative formulations (formal terminology, corrected spelling, keywords),
+  each one is searched and the result lists are fused by reciprocal rank
+  (`fuseRankedLists`, capped by `maxCandidates`, default 40) before re-ranking.
+  The re-ranker and the answer still use the original question. `mode`:
+  `'off'` (default), `'fallback'` (expand and re-rank again only when no
+  candidate reaches `fallbackBelow`, default `minScore`, or there are none) or
+  `'always'`; `RAGQuery.expansion` overrides it per search. The trace reports
+  `expansion` (mode, triggered, reason, variants, candidate counts, error) and
+  each candidate's `foundBy`; `metrics.expansionLatencyMs`; the expansion
+  tokens are recorded; a failed expansion never fails the search
+  (`rag.query_expansion.end` event, audited with counts only).
+  `validateModels()` probes the expander (role `queryExpander`). Internally,
+  `RAGPipeline.search()` is split into retrieve and rank stages.
+
 - **Pricing catalog.** Cost estimates come from data instead of per-provider
   tables in code: `dist/pricing-catalog.json` (USD per 1M tokens, with cached
   and batch rates and announced retirements), regenerated from LiteLLM's

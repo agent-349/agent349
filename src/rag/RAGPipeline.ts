@@ -9,6 +9,7 @@ import type {
 } from './types.js';
 import type {
   ModelValidation,
+  QueryExpansionMode,
   QueryRewriteOutcome,
   QueryRewriterValidation,
   RAGTrace,
@@ -20,6 +21,8 @@ import type { RerankerProvider } from './reranker/RerankerProvider.js';
 import type { QueryRewriter } from './queryRewriting/QueryRewriter.js';
 import type { EventBus } from '../events/EventBus.js';
 import type { TokenTracker } from '../tokens/TokenTracker.js';
+import type { QueryExpander } from './queryRewriting/QueryExpander.js';
+import { fuseRankedLists } from './fusion/RRF.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -76,6 +79,9 @@ export class RAGPipeline {
   readonly #bus: EventBus;
   readonly #tokens: TokenTracker;
   readonly #defaultRerankPolicy: 'require' | 'degrade';
+  readonly #queryExpander: QueryExpander | undefined;
+  readonly #expansion: Required<Omit<RAGPipelineExpansionOptions, 'fallbackBelow'>> &
+    Pick<RAGPipelineExpansionOptions, 'fallbackBelow'>;
 
   /**
    * @param embeddingRouter - Router that delegates embed calls to the correct provider.
@@ -87,6 +93,9 @@ export class RAGPipeline {
    * @param defaultRerankPolicy - What to do when a requested re-rank fails.
    *                          Overridable per query via `RAGQuery.rerankPolicy`.
    *                          Default: `'require'`.
+   * @param options.queryExpander - Generates query variants for multi-query retrieval.
+   * @param options.expansion - When to expand (`mode`, default `'off'`), the
+   *                          fallback threshold and the fused-candidate cap.
    */
   constructor(
     embeddingRouter: EmbeddingRouter,
@@ -96,6 +105,7 @@ export class RAGPipeline {
     tokenTracker: TokenTracker,
     queryRewriter?: QueryRewriter,
     defaultRerankPolicy: 'require' | 'degrade' = 'require',
+    options: { queryExpander?: QueryExpander; expansion?: RAGPipelineExpansionOptions } = {},
   ) {
     this.#embedding = embeddingRouter;
     this.#store = vectorStore;
@@ -104,6 +114,14 @@ export class RAGPipeline {
     this.#tokens = tokenTracker;
     this.#queryRewriter = queryRewriter;
     this.#defaultRerankPolicy = defaultRerankPolicy;
+    this.#queryExpander = options.queryExpander;
+    this.#expansion = {
+      mode: options.expansion?.mode ?? 'off',
+      maxCandidates: Math.max(1, options.expansion?.maxCandidates ?? 40),
+      ...(options.expansion?.fallbackBelow !== undefined && {
+        fallbackBelow: options.expansion.fallbackBelow,
+      }),
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -130,6 +148,39 @@ export class RAGPipeline {
   /** The query rewriter applied before embedding, if any. */
   get queryRewriter(): QueryRewriter | undefined {
     return this.#queryRewriter;
+  }
+
+  /** The query expander used for multi-query retrieval, if any. */
+  get queryExpander(): QueryExpander | undefined {
+    return this.#queryExpander;
+  }
+
+  /**
+   * Probes the configured query expander with a real request.
+   * Never throws: a failed probe is reported in the returned value.
+   *
+   * @returns A {@link ModelValidation} with role `'queryExpander'`.
+   */
+  async validateQueryExpander(): Promise<ModelValidation> {
+    const expander = this.#queryExpander;
+    if (expander === undefined)
+      return { role: 'queryExpander', configured: false, available: false };
+    const startMs = Date.now();
+    let probe: ProviderProbe;
+    try {
+      probe = await expander.validate();
+    } catch (err) {
+      probe = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    return {
+      role: 'queryExpander',
+      configured: true,
+      provider: expander.provider,
+      model: expander.model,
+      available: probe.ok,
+      latencyMs: Date.now() - startMs,
+      ...(!probe.ok && { error: probe.error ?? 'the query expander probe did not succeed' }),
+    };
   }
 
   /**
@@ -272,7 +323,7 @@ export class RAGPipeline {
    */
   async search(ragQuery: RAGQuery, context: ExecutionContext): Promise<RAGResult> {
     const pipelineStart = Date.now();
-    const emit = (type: string, data: Record<string, unknown>): void => {
+    const emit: Emit = (type, data) => {
       this.#bus.emit(type, {
         ...data,
         _context: {
@@ -323,7 +374,203 @@ export class RAGPipeline {
       });
     }
 
-    // ── 1. EMBED ────────────────────────────────────────────────────────────
+    // ── 1–3. EMBED, SEARCH, MERGE ────────────────────────────────────────────
+    const providerName = await this.#embeddingProviderFor(collections);
+    const retrieveParams: RetrieveParams = {
+      providerName,
+      collections,
+      topK,
+      searchMode,
+      hybridAlpha,
+      filters,
+      rrfK,
+    };
+    const retrieval = await this.#retrieve(query, retrieveParams, context, emit);
+    let candidates = retrieval.merged;
+    let embeddingTokens = retrieval.embeddingTokens;
+    let embeddingLatencyMs = retrieval.embeddingLatencyMs;
+    let searchLatencyMs = retrieval.searchLatencyMs;
+    let totalFound = retrieval.totalFound;
+    const retrievalScores = new Map(candidates.map((p) => [p.id, p.score]));
+    let foundBy: Map<string, number[]> | undefined;
+    let expansion: RAGTrace['expansion'];
+    let expansionLatencyMs: number | undefined;
+
+    const mode: QueryExpansionMode =
+      this.#queryExpander === undefined ? 'off' : (ragQuery.expansion ?? this.#expansion.mode);
+
+    /** Generates variants, searches them and fuses every result list. */
+    const expand = async (
+      reason: 'always' | 'below_threshold' | 'no_candidates',
+    ): Promise<void> => {
+      const expander = this.#queryExpander!;
+      const start = Date.now();
+      const outcome = await expander.expand(query);
+      if ((outcome.inputTokens ?? 0) + (outcome.outputTokens ?? 0) > 0) {
+        await this.#tokens.record(context, {
+          inputTokens: outcome.inputTokens ?? 0,
+          outputTokens: outcome.outputTokens ?? 0,
+          totalTokens: (outcome.inputTokens ?? 0) + (outcome.outputTokens ?? 0),
+          provider: expander.provider,
+          model: expander.model,
+          toolName: 'rag.search',
+        });
+      }
+      const before = candidates.length;
+      if (outcome.variants.length > 0) {
+        const extra = await Promise.all(
+          outcome.variants.map((v) => this.#retrieve(v, retrieveParams, context, emit)),
+        );
+        const lists = [candidates, ...extra.map((r) => r.merged)];
+        foundBy = new Map();
+        lists.forEach((list, index) => {
+          for (const p of list) {
+            foundBy!.set(p.id, [...(foundBy!.get(p.id) ?? []), index]);
+            if (!retrievalScores.has(p.id)) retrievalScores.set(p.id, p.score);
+          }
+        });
+        candidates = fuseRankedLists(lists, rrfK).slice(0, this.#expansion.maxCandidates);
+        for (const r of extra) {
+          embeddingTokens += r.embeddingTokens;
+          embeddingLatencyMs += r.embeddingLatencyMs;
+          searchLatencyMs += r.searchLatencyMs;
+          totalFound += r.totalFound;
+        }
+      }
+      expansionLatencyMs = Date.now() - start;
+      expansion = {
+        mode: mode === 'always' ? 'always' : 'fallback',
+        triggered: true,
+        reason,
+        variants: outcome.variants,
+        ...(outcome.error !== undefined && { error: outcome.error }),
+        candidatesBefore: before,
+        candidatesAfter: candidates.length,
+      };
+      emit('rag.query_expansion.end', {
+        latencyMs: expansionLatencyMs,
+        mode: expansion.mode,
+        reason,
+        variants: outcome.variants.length,
+        candidatesBefore: before,
+        candidatesAfter: candidates.length,
+        model: expander.model,
+        ...(outcome.error !== undefined && { error: outcome.error }),
+      });
+    };
+
+    if (mode === 'always') await expand('always');
+
+    // ── 4. RERANK (optional) ────────────────────────────────────────────────
+    const rankParams: RankParams = { finalTopK, rerank, rerankPolicy };
+    let ranking = await this.#rank(query, candidates, rankParams, context, emit);
+    let rerankLatencyMs = ranking.rerankLatencyMs;
+    let rerankTokens = ranking.rerankTokens;
+
+    // ── 4b. FALLBACK EXPANSION ──────────────────────────────────────────────
+    // Expand only when the plain search found nothing relevant: no candidates,
+    // or (re-ranked) none reaching the threshold. Costs and latency fall only
+    // on the searches that would otherwise end in "nothing found".
+    if (mode === 'fallback') {
+      const threshold = this.#expansion.fallbackBelow ?? minScore;
+      const best = ranking.rankedAll[0]?.score ?? 0;
+      const reason =
+        candidates.length === 0
+          ? ('no_candidates' as const)
+          : ranking.reranked && threshold > 0 && best < threshold
+            ? ('below_threshold' as const)
+            : undefined;
+      if (reason !== undefined) {
+        await expand(reason);
+        // Re-rank only when the variants brought something to rank again.
+        if ((expansion?.variants.length ?? 0) > 0) {
+          ranking = await this.#rank(query, candidates, rankParams, context, emit);
+          if (ranking.rerankLatencyMs !== undefined) {
+            rerankLatencyMs = (rerankLatencyMs ?? 0) + ranking.rerankLatencyMs;
+          }
+          if (ranking.rerankTokens !== undefined) {
+            rerankTokens = (rerankTokens ?? 0) + ranking.rerankTokens;
+          }
+        }
+      } else {
+        expansion = {
+          mode: 'fallback',
+          triggered: false,
+          variants: [],
+          candidatesBefore: candidates.length,
+          candidatesAfter: candidates.length,
+        };
+      }
+    }
+
+    // ── 5. FILTER BY minScore ────────────────────────────────────────────────
+    let finalPassages = ranking.finalPassages;
+    const beforeMinScore = finalPassages.length;
+    if (minScore > 0) {
+      finalPassages = finalPassages.filter((p) => p.score >= minScore);
+    }
+
+    const trace = buildTrace({
+      originalQuery: rawQuery,
+      searchQuery: query,
+      ...(rewriteOutcome !== undefined &&
+        this.#queryRewriter !== undefined && {
+          rewrite: { strategy: this.#queryRewriter.name, outcome: rewriteOutcome },
+        }),
+      ...(expansion !== undefined && { expansion }),
+      candidateCount: candidates.length,
+      retrievalScores,
+      ...(foundBy !== undefined && { foundBy }),
+      rankedAll: ranking.rankedAll,
+      reranked: ranking.reranked,
+      finalTopK,
+      minScore,
+      droppedByMinScore: beforeMinScore - finalPassages.length,
+    });
+
+    const totalLatencyMs = Date.now() - pipelineStart;
+    const llmTokens = rerankTokens ?? 0;
+    const metrics = {
+      embeddingLatencyMs,
+      searchLatencyMs,
+      totalLatencyMs,
+      ...(queryRewriteLatencyMs !== undefined && { queryRewriteLatencyMs }),
+      ...(expansionLatencyMs !== undefined && { expansionLatencyMs }),
+      ...(rerankLatencyMs !== undefined && { rerankLatencyMs }),
+      ...(rerankTokens !== undefined && { tokensUsed: llmTokens + embeddingTokens }),
+    };
+
+    emit('rag.pipeline.complete', {
+      totalLatencyMs,
+      metrics,
+      passageCount: finalPassages.length,
+      droppedByMinScore: trace.droppedByMinScore,
+      trace,
+    });
+
+    return {
+      passages: finalPassages,
+      totalFound,
+      query,
+      collections,
+      searchMode,
+      reranked: ranking.reranked,
+      metrics,
+      trace,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Search stages
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * The embedding provider shared by `collections`, read from their metadata.
+   *
+   * @throws {@link RAGError} when the collections use different providers or
+   *         none has SDK metadata.
+   */
+  async #embeddingProviderFor(collections: string[]): Promise<string> {
     // Validate that all collections use the same embedding provider before
     // embedding the query. Mixed providers would produce incompatible vectors.
     const collInfos = await Promise.all(collections.map((c) => this.#store.collectionInfo(c)));
@@ -352,12 +599,22 @@ export class RAGPipeline {
         'embeddingModel',
       );
     }
+    return collWithMeta.embeddingModel.split('/')[0]!;
+  }
 
-    emit('rag.embed.start', { query });
+  /** Embeds `text`, searches every collection and merges the results. */
+  async #retrieve(
+    text: string,
+    params: RetrieveParams,
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<RetrieveResult> {
+    const { providerName, collections, topK, searchMode, hybridAlpha, filters, rrfK } = params;
+
+    // ── EMBED ────────────────────────────────────────────────────────────
+    emit('rag.embed.start', { query: text });
     const embedStart = Date.now();
-
-    const providerName = collWithMeta.embeddingModel.split('/')[0]!;
-    const embResult = await this.#embedding.embed(query, providerName);
+    const embResult = await this.#embedding.embed(text, providerName);
     // The query embedding is billed too: record it like the re-ranker's tokens.
     if (embResult.tokensUsed > 0) {
       await this.#tokens.record(context, {
@@ -369,17 +626,12 @@ export class RAGPipeline {
         toolName: 'rag.search',
       });
     }
-
     const embeddingLatencyMs = Date.now() - embedStart;
-    emit('rag.embed.end', {
-      latencyMs: embeddingLatencyMs,
-      dimensions: embResult.dimensions,
-    });
+    emit('rag.embed.end', { latencyMs: embeddingLatencyMs, dimensions: embResult.dimensions });
 
-    // ── 2. SEARCH ───────────────────────────────────────────────────────────
+    // ── SEARCH ───────────────────────────────────────────────────────────
     emit('rag.search.start', { collections, searchMode });
     const searchStart = Date.now();
-
     const allPassages: Passage[] = [];
     for (const collection of collections) {
       let passages: Passage[];
@@ -388,14 +640,14 @@ export class RAGPipeline {
           passages = await this.#store.search(collection, embResult.vector, topK, filters);
           break;
         case 'keyword':
-          passages = await this.#store.keywordSearch(collection, query, topK, filters);
+          passages = await this.#store.keywordSearch(collection, text, topK, filters);
           break;
         case 'hybrid':
         default:
           passages = await this.#store.hybridSearch(
             collection,
             embResult.vector,
-            query,
+            text,
             topK,
             hybridAlpha,
             filters,
@@ -404,30 +656,38 @@ export class RAGPipeline {
       }
       allPassages.push(...passages);
     }
-
     const searchLatencyMs = Date.now() - searchStart;
-    emit('rag.search.end', {
+    emit('rag.search.end', { totalFound: allPassages.length, latencyMs: searchLatencyMs });
+
+    return {
+      merged: deduplicatePassages(allPassages),
       totalFound: allPassages.length,
-      latencyMs: searchLatencyMs,
-    });
+      embeddingTokens: embResult.tokensUsed,
+      embeddingLatencyMs,
+      searchLatencyMs,
+    };
+  }
 
-    // ── 3. MERGE & DEDUPLICATE ───────────────────────────────────────────────
-    const merged = deduplicatePassages(allPassages);
-
-    // ── 4. RERANK (optional) ────────────────────────────────────────────────
-    let finalPassages: Passage[];
+  /** Re-ranks `candidates` against `query` (or orders them by retrieval score). */
+  async #rank(
+    query: string,
+    candidates: Passage[],
+    params: RankParams,
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<RankResult> {
+    const { finalTopK, rerank, rerankPolicy } = params;
     let rankedAll: Passage[] = [];
     let rerankLatencyMs: number | undefined;
     let rerankTokens: number | undefined;
-    let reranked = false;
 
     if (rerank && this.#reranker !== undefined) {
-      emit('rag.rerank.start', { passageCount: merged.length });
+      emit('rag.rerank.start', { passageCount: candidates.length });
       const rerankStart = Date.now();
 
       try {
         const estimatedRerankTokens = Math.ceil(
-          (query.length + merged.reduce((sum, passage) => sum + passage.content.length, 0)) / 4,
+          (query.length + candidates.reduce((sum, passage) => sum + passage.content.length, 0)) / 4,
         );
         const decision = await this.#tokens.checkLimits(
           context.tenantId,
@@ -453,19 +713,18 @@ export class RAGPipeline {
         // Score every candidate, not just the top `finalTopK`: the re-ranker
         // reads them all anyway, and the scores of the ones below the cut are
         // what the trace needs to explain a missing passage.
-        const rerankResult = await this.#reranker.rerank(query, merged, merged.length);
+        const rerankResult = await this.#reranker.rerank(query, candidates, candidates.length);
         rankedAll = rerankResult.passages;
-        finalPassages = rankedAll.slice(0, finalTopK);
+        const finalPassages = rankedAll.slice(0, finalTopK);
 
         rerankLatencyMs = Date.now() - rerankStart;
         rerankTokens = rerankResult.tokensUsed;
-        reranked = true;
 
         emit('rag.rerank.end', {
           latencyMs: rerankLatencyMs,
           // Before `minScore`: the count after the cut is in `rag.pipeline.complete`.
           finalCount: finalPassages.length,
-          candidateCount: merged.length,
+          candidateCount: candidates.length,
         });
 
         // Track reranker token usage if reported.
@@ -479,6 +738,13 @@ export class RAGPipeline {
             toolName: 'rag.search',
           });
         }
+        return {
+          rankedAll,
+          finalPassages,
+          reranked: true,
+          rerankLatencyMs,
+          ...(rerankTokens !== undefined && { rerankTokens }),
+        };
       } catch (err) {
         if (err instanceof TokenLimitError) throw err;
         emit('rag.rerank.error', {
@@ -501,68 +767,14 @@ export class RAGPipeline {
             { cause: err instanceof Error ? err : undefined },
           );
         }
-
-        rankedAll = [...merged].sort((a, b) => b.score - a.score);
-        finalPassages = rankedAll.slice(0, finalTopK);
       }
-    } else {
-      // No re-ranking requested, or no re-ranker configured at all. The policy
-      // deliberately does not apply here: it governs the failure of a re-ranker
-      // the deployment chose to run, not the absence of one. A re-ranker that is
-      // configured but unreachable is caught at startup by `validateReranker()`.
-      rankedAll = [...merged].sort((a, b) => b.score - a.score);
-      finalPassages = rankedAll.slice(0, finalTopK);
     }
-
-    // ── 5. FILTER BY minScore ────────────────────────────────────────────────
-    const beforeMinScore = finalPassages.length;
-    if (minScore > 0) {
-      finalPassages = finalPassages.filter((p) => p.score >= minScore);
-    }
-
-    const trace = buildTrace({
-      originalQuery: rawQuery,
-      searchQuery: query,
-      ...(rewriteOutcome !== undefined &&
-        this.#queryRewriter !== undefined && {
-          rewrite: { strategy: this.#queryRewriter.name, outcome: rewriteOutcome },
-        }),
-      merged,
-      rankedAll,
-      reranked,
-      finalTopK,
-      minScore,
-      droppedByMinScore: beforeMinScore - finalPassages.length,
-    });
-
-    const totalLatencyMs = Date.now() - pipelineStart;
-    const metrics = {
-      embeddingLatencyMs,
-      searchLatencyMs,
-      totalLatencyMs,
-      ...(queryRewriteLatencyMs !== undefined && { queryRewriteLatencyMs }),
-      ...(rerankLatencyMs !== undefined && { rerankLatencyMs }),
-      ...(rerankTokens !== undefined && { tokensUsed: rerankTokens + embResult.tokensUsed }),
-    };
-
-    emit('rag.pipeline.complete', {
-      totalLatencyMs,
-      metrics,
-      passageCount: finalPassages.length,
-      droppedByMinScore: trace.droppedByMinScore,
-      trace,
-    });
-
-    return {
-      passages: finalPassages,
-      totalFound: allPassages.length,
-      query,
-      collections,
-      searchMode,
-      reranked,
-      metrics,
-      trace,
-    };
+    // No re-ranking requested, no re-ranker configured, or a degraded failure.
+    // The policy deliberately does not apply to a missing re-ranker: it governs
+    // the failure of one the deployment chose to run. A re-ranker that is
+    // configured but unreachable is caught at startup by `validateReranker()`.
+    rankedAll = [...candidates].sort((a, b) => b.score - a.score);
+    return { rankedAll, finalPassages: rankedAll.slice(0, finalTopK), reranked: false };
   }
 
   /**
@@ -610,13 +822,67 @@ export class RAGPipeline {
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Emits a pipeline event with the request context attached. */
+type Emit = (type: string, data: Record<string, unknown>) => void;
+
+/** Parameters of one retrieval pass (embed, search, merge). */
+interface RetrieveParams {
+  providerName: string;
+  collections: string[];
+  topK: number;
+  searchMode: RAGQuery['searchMode'];
+  hybridAlpha: number;
+  filters: RAGQuery['filters'];
+  rrfK: number;
+}
+
+/** Result of one retrieval pass. */
+interface RetrieveResult {
+  merged: Passage[];
+  totalFound: number;
+  embeddingTokens: number;
+  embeddingLatencyMs: number;
+  searchLatencyMs: number;
+}
+
+/** Parameters of the ranking stage. */
+interface RankParams {
+  finalTopK: number;
+  rerank: boolean;
+  rerankPolicy: 'require' | 'degrade';
+}
+
+/** Result of the ranking stage. */
+interface RankResult {
+  rankedAll: Passage[];
+  finalPassages: Passage[];
+  reranked: boolean;
+  rerankLatencyMs?: number;
+  rerankTokens?: number;
+}
+
+/** When and how the pipeline expands queries (see {@link RAGPipeline}). */
+export interface RAGPipelineExpansionOptions {
+  /** Default expansion mode; `RAGQuery.expansion` overrides it. Default `'off'`. */
+  mode?: QueryExpansionMode;
+  /** `fallback` expands when the best re-ranked score is below this. Default: the query's `minScore`. */
+  fallbackBelow?: number;
+  /** Cap on fused candidates sent to the re-ranker after an expansion. Default 40. */
+  maxCandidates?: number;
+}
+
 /** Inputs of {@link buildTrace}. */
 interface TraceInput {
   originalQuery: string;
   searchQuery: string;
   rewrite?: { strategy: string; outcome: QueryRewriteOutcome };
-  /** De-duplicated candidates with their normalised retrieval scores. */
-  merged: Passage[];
+  expansion?: RAGTrace['expansion'];
+  /** Candidates sent to ranking (after any expansion). */
+  candidateCount: number;
+  /** Retrieval score of each candidate (normalised, from the first search that found it). */
+  retrievalScores: Map<string, number>;
+  /** Which searches returned each candidate, when the query was expanded. */
+  foundBy?: Map<string, number[]>;
   /** Every candidate in final ranking order (re-ranker scores when re-ranked). */
   rankedAll: Passage[];
   reranked: boolean;
@@ -630,7 +896,7 @@ interface TraceInput {
  * candidate, and where each one ended up.
  */
 function buildTrace(input: TraceInput): RAGTrace {
-  const retrievalScore = new Map(input.merged.map((p) => [p.id, p.score]));
+  const retrievalScore = input.retrievalScores;
   const candidates: RAGTraceCandidate[] = input.rankedAll.map((p, index) => {
     let stage: RAGTraceCandidate['stage'];
     if (index >= input.finalTopK) stage = 'beyond_final_top_k';
@@ -642,6 +908,7 @@ function buildTrace(input: TraceInput): RAGTrace {
       ...(p.metadata.chunkIndex !== undefined && { chunkIndex: p.metadata.chunkIndex }),
       retrievalScore: retrievalScore.get(p.id) ?? p.score,
       ...(input.reranked && { rerankScore: p.score }),
+      ...(input.foundBy?.has(p.id) === true && { foundBy: input.foundBy.get(p.id)! }),
       stage,
     };
   });
@@ -661,9 +928,10 @@ function buildTrace(input: TraceInput): RAGTrace {
     originalQuery: input.originalQuery,
     searchQuery: input.searchQuery,
     ...(rewrite !== undefined && { rewrite }),
+    ...(input.expansion !== undefined && { expansion: input.expansion }),
     minScore: input.minScore,
     finalTopK: input.finalTopK,
-    candidateCount: input.merged.length,
+    candidateCount: input.candidateCount,
     droppedByMinScore: input.droppedByMinScore,
     candidates,
   };

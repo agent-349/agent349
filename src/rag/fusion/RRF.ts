@@ -62,3 +62,31 @@ export function reciprocalRankFusion(
     .sort((a, b) => b[1] - a[1])
     .map(([id, score]) => ({ ...byId.get(id)!, score }));
 }
+
+/**
+ * Reciprocal Rank Fusion of any number of ranked lists: each passage scores
+ * `Σ 1 / (k + rank)` over the lists that contain it. Used to merge the results
+ * of a query and its expansion variants, whose raw scores are not comparable.
+ *
+ * The returned passages are the first occurrence of each id (earlier lists win,
+ * so the original query's copy is kept) with `score` set to the fused score
+ * normalised to [0, 1] by the best one.
+ *
+ * @param lists - Ranked passage lists, best first.
+ * @param k     - Rank damping constant. Default: 60.
+ * @returns The fused list, best first.
+ */
+export function fuseRankedLists(lists: Passage[][], k = 60): Passage[] {
+  const byId = new Map<string, Passage>();
+  const scores = new Map<string, number>();
+  for (const list of lists) {
+    list.forEach((p, rank) => {
+      if (!byId.has(p.id)) byId.set(p.id, p);
+      scores.set(p.id, (scores.get(p.id) ?? 0) + 1 / (k + rank + 1));
+    });
+  }
+  const best = Math.max(0, ...scores.values()) || 1;
+  return [...scores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, score]) => ({ ...byId.get(id)!, score: score / best }));
+}

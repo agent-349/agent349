@@ -1547,7 +1547,23 @@ export interface RAGQuery {
    * and when no rewriter is set.
    */
   conversationHistory?: LLMMessage[];
+  /**
+   * Query expansion for this search, overriding `rag.queryExpansion.mode`:
+   * `'off'`, `'fallback'` (expand only when no candidate reaches the
+   * threshold after re-ranking) or `'always'`. Needs a configured expander.
+   */
+  expansion?: QueryExpansionMode;
 }
+
+/**
+ * When the pipeline expands a query into alternative formulations:
+ * - `'off'` — never.
+ * - `'fallback'` — only when, after re-ranking, no candidate reaches the
+ *   threshold (`fallbackBelow`, default `minScore`) or there are no candidates;
+ *   the search then runs again with the variants and is re-ranked.
+ * - `'always'` — on every search, before re-ranking.
+ */
+export type QueryExpansionMode = 'off' | 'fallback' | 'always';
 
 /** Why a query rewriter kept the original query. */
 export type QueryRewriteFallbackReason = 'error' | 'empty' | 'too_long' | 'too_short';
@@ -1587,6 +1603,11 @@ export interface RAGTraceCandidate {
   /** Absolute relevance score from the re-ranker (absent when not re-ranked). */
   rerankScore?: number;
   /**
+   * Which searches returned the candidate when the query was expanded:
+   * `0` is the query itself, `1..n` the variants in {@link RAGTrace.expansion}.
+   */
+  foundBy?: number[];
+  /**
    * Where the candidate ended up:
    * - `'final'` — returned in {@link RAGResult.passages}.
    * - `'below_min_score'` — within `finalTopK` but under `minScore`.
@@ -1608,6 +1629,23 @@ export interface RAGTrace {
   originalQuery: string;
   /** The query actually embedded and searched (after rewriting, if any). */
   searchQuery: string;
+  /** Query-expansion step; absent when expansion is off for the search. */
+  expansion?: {
+    /** Expansion mode applied to this search. */
+    mode: 'fallback' | 'always';
+    /** Whether variants were generated and searched. */
+    triggered: boolean;
+    /** Why it was triggered. */
+    reason?: 'always' | 'below_threshold' | 'no_candidates';
+    /** The alternative queries searched (index `i` is `foundBy` value `i + 1`). */
+    variants: string[];
+    /** Expander error, when generating the variants failed (the search went on without them). */
+    error?: string;
+    /** Candidates before the expansion. */
+    candidatesBefore: number;
+    /** Candidates after fusing every search (capped by `maxCandidates`). */
+    candidatesAfter: number;
+  };
   /** Query-rewriting step; absent when no rewriter is configured. */
   rewrite?: {
     /** Rewriter strategy name (e.g. `'contextual'`). */
@@ -1649,6 +1687,8 @@ export interface RAGResult {
     searchLatencyMs: number;
     /** Time spent re-ranking in ms (absent if reranking was skipped). */
     rerankLatencyMs?: number;
+    /** Time spent generating query variants in ms (absent when not expanded). */
+    expansionLatencyMs?: number;
     /** Total end-to-end latency in ms. */
     totalLatencyMs: number;
     /** Tokens consumed if the re-ranker is LLM-based. */
@@ -1727,7 +1767,7 @@ export interface QueryRewriterValidation {
  */
 export interface ModelValidation {
   /** What the model is used for. */
-  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter';
+  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter' | 'queryExpander';
   /** Whether this role is configured. An unconfigured role is not a failure. */
   configured: boolean;
   /** Provider name. */
@@ -1753,7 +1793,7 @@ export interface ModelValidation {
 export interface ModelsValidationReport {
   /** `true` when every configured model is available. */
   ok: boolean;
-  /** One entry per role, in a fixed order: llm, embedding, reranker, queryRewriter. */
+  /** One entry per role, in a fixed order: llm, embedding, reranker, queryRewriter, queryExpander. */
   models: ModelValidation[];
 }
 

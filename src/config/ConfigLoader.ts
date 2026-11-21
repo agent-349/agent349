@@ -686,6 +686,34 @@ export interface SDKConfig {
        */
       reasoningEffort?: ReasoningEffort;
     };
+    /**
+     * Multi-query retrieval: a small model rewrites the question into a few
+     * alternative formulations (formal terminology, corrected spelling,
+     * keywords), every one is searched and the results are fused before
+     * re-ranking against the original question. Off unless `mode` says so.
+     */
+    queryExpansion?: {
+      /**
+       * `'off'` (default), `'fallback'` (expand only when, after re-ranking, no
+       * candidate reaches `fallbackBelow`, or there are none) or `'always'`.
+       * Overridable per search with `RAGQuery.expansion`.
+       */
+      mode?: 'off' | 'fallback' | 'always';
+      /** Provider instance. Default: `llm.defaultProvider`. */
+      llmProvider?: string;
+      /** Model. Default: `llm.defaultModel`. A small, fast model is enough. */
+      model?: string;
+      /** Reasoning effort of the expansion call. Default: `'minimal'`. */
+      reasoningEffort?: ReasoningEffort;
+      /** Alternative queries per expansion (1–5). Default: 3. */
+      variants?: number;
+      /** Threshold below which `fallback` expands. Default: the search's `minScore`. */
+      fallbackBelow?: number;
+      /** Cap on fused candidates sent to the re-ranker. Default: 40. */
+      maxCandidates?: number;
+      /** One or two sentences on what the collection covers, to steer terminology. */
+      context?: string;
+    };
     reranker?: {
       provider: 'llm' | 'cohere' | 'tei';
       model?: string;
@@ -1101,6 +1129,33 @@ function validate(cfg: SDKConfig): void {
     );
   }
   validateVectorStore(cfg.rag);
+  const qe = cfg.rag.queryExpansion;
+  if (qe !== undefined) {
+    if (qe.mode !== undefined && !['off', 'fallback', 'always'].includes(qe.mode)) {
+      throw new ConfigError(
+        'rag.queryExpansion.mode must be one of: off, fallback, always',
+        'rag.queryExpansion.mode',
+      );
+    }
+    if (
+      qe.variants !== undefined &&
+      (!Number.isInteger(qe.variants) || qe.variants < 1 || qe.variants > 5)
+    ) {
+      throw new ConfigError(
+        'rag.queryExpansion.variants must be an integer from 1 to 5',
+        'rag.queryExpansion.variants',
+      );
+    }
+    if (
+      qe.maxCandidates !== undefined &&
+      (!Number.isInteger(qe.maxCandidates) || qe.maxCandidates < 1)
+    ) {
+      throw new ConfigError(
+        'rag.queryExpansion.maxCandidates must be a positive integer',
+        'rag.queryExpansion.maxCandidates',
+      );
+    }
+  }
   if (
     cfg.rag.reranker?.provider === 'cohere' &&
     (cfg.rag.reranker.apiKey === undefined || cfg.rag.reranker.apiKey === '')

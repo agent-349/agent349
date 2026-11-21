@@ -300,6 +300,45 @@ for (const c of trace.candidates)
   console.log(c.documentId, c.chunkIndex, c.retrievalScore, c.rerankScore, c.stage);
 ```
 
+### Query expansion
+
+Users ask colloquially, misspell, or use other words than the documents. With
+`rag.queryExpansion`, a small model writes a few alternative formulations of
+the question (formal terminology, corrected spelling, keywords); each is
+searched and the result lists are fused by reciprocal rank before re-ranking.
+The re-ranker and the answer still use the original question, so a poor
+variant can add a candidate but not change what is answered.
+
+```json
+"rag": {
+  "queryExpansion": {
+    "mode": "fallback",
+    "llmProvider": "openai",
+    "model": "gpt-6-luna",
+    "reasoningEffort": "minimal",
+    "variants": 3,
+    "fallbackBelow": 0.4,
+    "maxCandidates": 40,
+    "context": "Operating rules of a network of payment agencies."
+  }
+}
+```
+
+| `mode`       | When it expands                                                                                                                                             | Cost                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `'off'`      | Never (default)                                                                                                                                             | —                                                |
+| `'fallback'` | Only when, after re-ranking, no candidate reaches `fallbackBelow` (default: `minScore`) or there are none; it then searches the variants and re-ranks again | Only on the searches that found nothing relevant |
+| `'always'`   | Every search, before re-ranking                                                                                                                             | One extra call and searches per query            |
+
+`fallback` needs a re-ranker to judge relevance; without one it expands only
+when there are no candidates. A single search can override the mode with
+`expansion: 'always' | 'fallback' | 'off'` (the expander is built whenever the
+section exists, even with `mode: 'off'`). A failed expansion never fails the
+search: it goes on with the original query and the trace says why
+(`trace.expansion.error`). `trace.expansion.variants` lists the queries
+searched and each candidate's `foundBy` says which searches returned it (`0`
+is the query itself).
+
 `formatForContext()` labels each passage with the document title (falling back
 to `source`, then `documentId`), so internal paths and URLs do not reach the
 model. Pass `{ sourceLabel: 'source' }` to label with the source instead.

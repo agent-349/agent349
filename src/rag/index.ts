@@ -27,7 +27,7 @@ export type {
   VectorStoreAdapterConfig,
   VectorStoreAdapterName,
 } from './vectorstore/createVectorStoreAdapter.js';
-export { reciprocalRankFusion } from './fusion/RRF.js';
+export { reciprocalRankFusion, fuseRankedLists } from './fusion/RRF.js';
 export { RerankerProvider } from './reranker/RerankerProvider.js';
 export { LLMReranker } from './reranker/LLMReranker.js';
 export type { LLMRerankerConfig } from './reranker/LLMReranker.js';
@@ -41,8 +41,14 @@ export type {
   QueryRewriteFallbackReason,
 } from './queryRewriting/QueryRewriter.js';
 export { ContextualRewriter } from './queryRewriting/ContextualRewriter.js';
+export { QueryExpander } from './queryRewriting/QueryExpander.js';
+export type {
+  QueryExpanderOptions,
+  QueryExpansionOutcome,
+} from './queryRewriting/QueryExpander.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
 export { RAGPipeline } from './RAGPipeline.js';
+export type { RAGPipelineExpansionOptions } from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';
 export { RAGFacade } from './RAGFacade.js';
