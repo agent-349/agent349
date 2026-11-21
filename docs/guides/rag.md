@@ -226,6 +226,51 @@ await orch.rag.ingest('./knowledge/salary-bands.pdf', 'hr-policies', {
   `<provider>/<model>`. Searches embed the query with the provider named before
   the slash. Changing the model means re-ingesting into a new collection.
 
+### OCR of scanned documents
+
+With `rag.ocr.enabled`, the PDF loader keeps the text layer of each page and
+recognises only the pages without one (scanned) with Tesseract; images (PNG,
+JPEG, TIFF, BMP, WebP) are recognised too. It needs the optional dependency
+`tesseract.js` and the language data — `<lang>.traineddata` files in
+`langPath` — and never goes online unless `allowDownload` is true.
+
+```json
+"rag": {
+  "ocr": {
+    "enabled": true,
+    "languages": ["spa", "eng"],
+    "langPath": "./tessdata",
+    "minChars": 80,
+    "concurrency": 1,
+    "idleTimeoutMs": 60000,
+    "pageTimeoutMs": 120000,
+    "escalate": { "enabled": false, "belowConfidence": 70, "llmProvider": "openai", "model": "gpt-6.1-terra" }
+  }
+}
+```
+
+All the work — reading the PDF, rendering the pages, recognising them — runs
+in worker threads, off the host's event loop. A worker exists only while there
+is work: it is created for the first file, processes pages one at a time, and
+is terminated after `idleTimeoutMs` without work (freeing the Tesseract model,
+a few hundred MB with pdf.js). A page that exceeds `pageTimeoutMs` terminates
+the worker; the next file gets a new one. `concurrency` is the number of files
+at once (one worker each). A document's `language` metadata picks the
+Tesseract language (`es` → `spa`).
+
+`escalate` re-reads the pages Tesseract recognised with low confidence with a
+vision model through the LLM router (a cloud model or a local Ollama one);
+its tokens are recorded. Off by default.
+
+Hosts can use the service directly, without an Orchestrator:
+
+```ts nocheck
+import { OcrService } from 'agent349';
+const ocr = new OcrService({ languages: ['spa'], langPath: '/opt/app/tessdata' });
+const { text, pages, ocrPages, avgConfidence } = await ocr.extractPdf(pdfBytes);
+await ocr.close();
+```
+
 ## Giving agents access
 
 `rag.search` is a regular tool. Create one bound to your collections and put it

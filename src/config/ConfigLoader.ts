@@ -687,6 +687,46 @@ export interface SDKConfig {
       reasoningEffort?: ReasoningEffort;
     };
     /**
+     * OCR of scanned documents at ingestion: PDF pages without a text layer
+     * and images are recognised with Tesseract in a worker thread (needs the
+     * optional dependency `tesseract.js` and the language data in `langPath`).
+     * Off unless `enabled`.
+     */
+    ocr?: {
+      enabled?: boolean;
+      /** Tesseract languages (`spa`, `eng`…). A document's `language` metadata overrides them. Default: `['eng']`. */
+      languages?: string[];
+      /** Folder with `<lang>.traineddata`. Required unless `allowDownload`. Relative paths resolve against the working directory. */
+      langPath?: string;
+      /** Download missing language data from the tesseract.js CDN. Default: false. */
+      allowDownload?: boolean;
+      /** Pages with fewer characters of text are OCR'd. Default: 80. */
+      minChars?: number;
+      /** Render width in pixels. Default: 1700. */
+      renderWidth?: number;
+      /** Most pages OCR'd per file. Default: 200. */
+      maxPages?: number;
+      /** Page timeout; the worker is terminated. Default: 120000. */
+      pageTimeoutMs?: number;
+      /** Idle worker lifetime (0 keeps it). Default: 60000. */
+      idleTimeoutMs?: number;
+      /** Files at once (one worker thread each). Default: 1. */
+      concurrency?: number;
+      /** Re-read low-confidence pages with a vision model. Off unless `enabled`. */
+      escalate?: {
+        enabled?: boolean;
+        /** Tesseract confidence (0–100) below which a page is escalated. Default: 70. */
+        belowConfidence?: number;
+        /** Most pages escalated per file. Default: 20. */
+        maxPagesPerFile?: number;
+        /** Provider instance. Default: `llm.defaultProvider`. */
+        llmProvider?: string;
+        /** Vision-capable model. Default: `llm.defaultModel`. */
+        model?: string;
+        reasoningEffort?: ReasoningEffort;
+      };
+    };
+    /**
      * Lexical handling of the query, the same on every vector store.
      * Stop words are removed from the keyword component of the search (the
      * vector component keeps the full question); glossary terms found in the

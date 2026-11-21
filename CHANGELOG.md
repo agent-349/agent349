@@ -72,6 +72,19 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **OCR of scanned documents.** `OcrService` extracts the text of PDFs and
+  images off the host's event loop: a worker thread reads the text layer of
+  each page, renders the pages with fewer than `minChars` characters and
+  recognises them with Tesseract (`tesseract.js`, new optional dependency).
+  Workers are created on demand, process one page at a time, are terminated
+  after `idleTimeoutMs` idle and when a page exceeds `pageTimeoutMs`;
+  `concurrency` files at once. Language data is read from `langPath` and never
+  downloaded unless `allowDownload`. Optional escalation of low-confidence
+  pages to a vision model (`createVisionRecognizer`, any provider of the
+  router, tokens recorded). Wired as `rag.ocr`: `PDFLoader` OCRs scanned pages
+  and a new `ImageLoader` handles PNG/JPEG/TIFF/BMP/WebP; `orch.ocr` exposes
+  the service. The worker ships as `dist/ocrWorker.js`.
+
 - **Lexicon: stop words and glossary, the same on every vector store.** New
   `rag.lexicon` section.
   - `stopWords: 'auto'` removes built-in, curated stop words (es, en, pt, fr,

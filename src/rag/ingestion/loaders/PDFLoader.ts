@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { DocumentSource, RawDocument } from '../types.js';
 import { DocumentLoader } from './DocumentLoader.js';
 import { ValidationError } from '../../../errors/index.js';
+import { OcrService } from '../../ocr/OcrService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PDFLoader
@@ -21,6 +22,17 @@ import { ValidationError } from '../../../errors/index.js';
 export class PDFLoader extends DocumentLoader {
   override readonly name = 'pdf';
   override readonly supportedMimeTypes = ['application/pdf'];
+
+  readonly #ocr: OcrService | undefined;
+
+  /**
+   * @param ocr - When given, pages without a text layer (scanned) are
+   *              recognised with OCR, in a worker thread (`rag.ocr`).
+   */
+  constructor(ocr?: OcrService) {
+    super();
+    this.#ocr = ocr;
+  }
 
   override canLoad(source: DocumentSource): boolean {
     return source.mimeType === 'application/pdf';
@@ -50,6 +62,8 @@ export class PDFLoader extends DocumentLoader {
           `PDFLoader does not support type '${source.type}'. Use 'file' or 'buffer'.`,
         );
     }
+
+    if (this.#ocr !== undefined) return this.#loadWithOcr(source, buffer, this.#ocr);
 
     // Dynamic import so the module is optional at startup.
     // pdf-parse ships a CJS bundle; in ESM context we access it via the
@@ -83,6 +97,40 @@ export class PDFLoader extends DocumentLoader {
       },
       pages: result.numpages,
       extractionMethod: this.name,
+    };
+  }
+
+  /** Text layer per page, OCR for the pages without one (all in the OCR worker). */
+  async #loadWithOcr(
+    source: DocumentSource,
+    buffer: Buffer,
+    ocr: OcrService,
+  ): Promise<RawDocument> {
+    const lang = source.metadata?.language;
+    const tess = typeof lang === 'string' ? OcrService.tesseractLanguage(lang) : undefined;
+    const result = await ocr.extractPdf(buffer, tess !== undefined ? { languages: [tess] } : {});
+    const content = result.text
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    const ocrInfo = {
+      pages: result.ocrPages,
+      escalatedPages: result.escalatedPages,
+      ...(result.avgConfidence !== undefined && { avgConfidence: result.avgConfidence }),
+    };
+    return {
+      content,
+      metadata: {
+        documentId: '',
+        source: source.path ?? '[buffer]',
+        mimeType: 'application/pdf',
+        ...source.metadata,
+        ...(result.ocrPages > 0 && {
+          custom: { ...(source.metadata?.custom ?? {}), ocr: ocrInfo },
+        }),
+      },
+      pages: result.pages.length,
+      extractionMethod: result.ocrPages > 0 ? 'pdf+ocr' : this.name,
     };
   }
 }

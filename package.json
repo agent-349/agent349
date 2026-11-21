@@ -99,7 +99,8 @@
     "mongodb": "^6.21.0 || ^7.7.0",
     "mssql": "^11.0.1",
     "mysql2": "^3.15.3",
-    "oracledb": "^6.9.0 || ^7.0.1"
+    "oracledb": "^6.9.0 || ^7.0.1",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

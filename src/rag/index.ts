@@ -42,6 +42,17 @@ export type {
 } from './queryRewriting/QueryRewriter.js';
 export { ContextualRewriter } from './queryRewriting/ContextualRewriter.js';
 export { QueryExpander } from './queryRewriting/QueryExpander.js';
+export { OcrService, OcrError } from './ocr/OcrService.js';
+export type {
+  OcrServiceOptions,
+  OcrResult,
+  OcrPage,
+  OcrWorkerLike,
+  VisionRecognizer,
+} from './ocr/OcrService.js';
+export { createVisionRecognizer } from './ocr/visionRecognizer.js';
+export { ImageLoader } from './ingestion/loaders/ImageLoader.js';
+export type { VisionRecognizerOptions } from './ocr/visionRecognizer.js';
 export {
   StopWords,
   parseGlossary,

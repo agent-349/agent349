@@ -112,6 +112,10 @@ import { PlainTextLoader } from '../rag/ingestion/loaders/PlainTextLoader.js';
 import { MarkdownLoader } from '../rag/ingestion/loaders/MarkdownLoader.js';
 import { HTMLLoader } from '../rag/ingestion/loaders/HTMLLoader.js';
 import { PDFLoader } from '../rag/ingestion/loaders/PDFLoader.js';
+import { ImageLoader } from '../rag/ingestion/loaders/ImageLoader.js';
+import { OcrService } from '../rag/ocr/OcrService.js';
+import type { OcrServiceOptions } from '../rag/ocr/OcrService.js';
+import { createVisionRecognizer } from '../rag/ocr/visionRecognizer.js';
 import { DOCXLoader } from '../rag/ingestion/loaders/DOCXLoader.js';
 import { RecursiveChunker } from '../rag/ingestion/chunking/RecursiveChunker.js';
 import { LLMReranker } from '../rag/reranker/LLMReranker.js';
@@ -485,6 +489,7 @@ export class Orchestrator {
   #injectedVectorStore: VectorStoreAdapter | undefined;
   /** Vector store built from `rag.vectorStore` — closed on {@link shutdown}. */
   #ownedVectorStore: VectorStoreAdapter | undefined;
+  #ocr: OcrService | null | undefined;
   /** Memoised services handed to internal tool factories. */
   #toolServicesCache: InternalToolContext | undefined;
   /** Executor for host-initiated tool calls; built on first use. */
@@ -2039,6 +2044,7 @@ export class Orchestrator {
     // 6. Close the vector store built from config (e.g. a PostgreSQL pool).
     //    An injected store (overrides.vectorStore) belongs to the host.
     await this.#ownedVectorStore?.close();
+    if (this.#ocr) await this.#ocr.close();
   }
 
   /**
@@ -2163,6 +2169,66 @@ export class Orchestrator {
    * vector store. Register embedding providers via `orch.rag.pipeline` or
    * by passing an `EmbeddingRouter` to the `IngestionPipeline` constructor.
    */
+  /**
+   * The OCR service of `rag.ocr` (undefined when OCR is off). Used by the PDF
+   * and image loaders at ingestion; hosts can also call it directly. Worker
+   * threads exist only while there is work.
+   */
+  get ocr(): OcrService | undefined {
+    if (this.#ocr === undefined) this.#ocr = this.#buildOcr() ?? null;
+    return this.#ocr ?? undefined;
+  }
+
+  #buildOcr(): OcrService | undefined {
+    const cfg = this.#config.rag?.ocr;
+    if (cfg?.enabled !== true) return undefined;
+    const esc = cfg.escalate;
+    let escalate: OcrServiceOptions['escalate'];
+    if (esc?.enabled === true) {
+      const provider = esc.llmProvider ?? this.#config.llm.defaultProvider ?? 'claude';
+      const model = esc.model ?? this.#config.llm.defaultModel ?? 'claude-haiku-4-5';
+      escalate = {
+        ...(esc.belowConfidence !== undefined && { belowConfidence: esc.belowConfidence }),
+        ...(esc.maxPagesPerFile !== undefined && { maxPagesPerFile: esc.maxPagesPerFile }),
+        recognize: createVisionRecognizer(this.#router, provider, model, {
+          ...(esc.reasoningEffort !== undefined && { reasoningEffort: esc.reasoningEffort }),
+          onUsage: async (usage, usedModel) => {
+            await this.#tokens.record(
+              {
+                tenantId: 'system',
+                userId: 'ocr',
+                roles: [],
+                sessionId: 'ocr',
+                agentId: 'ocr',
+                requestId: 'ocr',
+              },
+              {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                totalTokens: usage.inputTokens + usage.outputTokens,
+                provider,
+                model: usedModel,
+                toolName: 'rag.ocr',
+              },
+            );
+          },
+        }),
+      };
+    }
+    return new OcrService({
+      ...(cfg.languages !== undefined && { languages: cfg.languages }),
+      ...(cfg.langPath !== undefined && { langPath: resolvePath(cfg.langPath) }),
+      ...(cfg.allowDownload !== undefined && { allowDownload: cfg.allowDownload }),
+      ...(cfg.minChars !== undefined && { minChars: cfg.minChars }),
+      ...(cfg.renderWidth !== undefined && { renderWidth: cfg.renderWidth }),
+      ...(cfg.maxPages !== undefined && { maxPages: cfg.maxPages }),
+      ...(cfg.pageTimeoutMs !== undefined && { pageTimeoutMs: cfg.pageTimeoutMs }),
+      ...(cfg.idleTimeoutMs !== undefined && { idleTimeoutMs: cfg.idleTimeoutMs }),
+      ...(cfg.concurrency !== undefined && { concurrency: cfg.concurrency }),
+      ...(escalate !== undefined && { escalate }),
+    });
+  }
+
   get rag(): RAGFacade {
     if (!this.#ragFacade) {
       this.#ragFacade = this.#buildRAGFacade();
@@ -2374,7 +2440,9 @@ export class Orchestrator {
     loaderRegistry.register(new PlainTextLoader());
     loaderRegistry.register(new MarkdownLoader());
     loaderRegistry.register(new HTMLLoader());
-    loaderRegistry.register(new PDFLoader());
+    const ocr = this.ocr;
+    if (ocr !== undefined) loaderRegistry.register(new ImageLoader(ocr));
+    loaderRegistry.register(new PDFLoader(ocr));
     loaderRegistry.register(new DOCXLoader());
 
     const ingestionPipeline = new IngestionPipeline(

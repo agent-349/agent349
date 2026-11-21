@@ -15,7 +15,9 @@ const optionalDeps = Object.keys(
 );
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  // The OCR worker runs in its own thread, loaded by file path next to the
+  // bundle (OcrService), so it is built as a separate entry.
+  entry: { index: 'src/index.ts', ocrWorker: 'src/rag/ocr/ocrWorker.ts' },
   format: ['esm', 'cjs'],
   dts: true,
   sourcemap: true,
