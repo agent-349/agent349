@@ -300,6 +300,74 @@ for (const c of trace.candidates)
   console.log(c.documentId, c.chunkIndex, c.retrievalScore, c.rerankScore, c.stage);
 ```
 
+### Stop words and glossary
+
+`rag.lexicon` handles the vocabulary of the query the same way on every
+vector store: nothing is configured in the engine.
+
+```json
+"rag": {
+  "lexicon": {
+    "stopWords": "auto",
+    "languages": ["es"],
+    "glossaryFile": "./config/glossary.txt"
+  }
+}
+```
+
+- **Stop words** affect only the keyword component of the search; the
+  vector component always gets the full question, where function words
+  carry meaning. The built-in lists (es, en, pt, fr, it, de) hold only
+  function words, and negations or exclusions ("no", "sin", "not", "only",
+  "não", "nicht"…) are never removed, whatever the lists say. `languages`
+  picks the lists (all of them when absent; `RAGQuery.languages` overrides
+  it); `extraStopWords` and `keepWords` tune them; a list replaces them.
+  Languages without spaces between words (Chinese, Japanese) are left to
+  the engine. Off by default.
+
+  `stopWordsMode` chooses where they apply: `'native'` (the engine),
+  `'query'` (the SDK removes them from the keyword query, the same on every
+  engine) or `'auto'` (default: native when the engine supports it, query
+  otherwise).
+
+  | Engine                      | Native stop words                                                                                                                           | When                                   |
+  | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+  | Meilisearch                 | `stopWords` index setting (SDK words)                                                                                                       | Any time; re-indexes in the background |
+  | Weaviate                    | `invertedIndexConfig.stopwords` (preset `none` + SDK words); only the query is filtered                                                     | Any time                               |
+  | pgvector                    | Text-search configuration of the language (`spanish`, `english`…): PostgreSQL's own dictionary **and stemmer**; one language per collection | Any time; rewrites the `tsv` column    |
+  | Milvus                      | Stop filter of the BM25 analyzer (SDK words)                                                                                                | Only at creation                       |
+  | Qdrant, Pinecone, in-memory | None: applied from the query                                                                                                                | —                                      |
+
+  Native stop words are set per collection: `createCollection(name, { languages })`
+  creates it with them, and `configureCollection(name, { languages })` applies
+  them to an existing one — or clears them when stop words are off or the mode
+  is `'query'`, so they are not applied twice. Call it when the collection's
+  languages or the stop-word settings change, not per search: on Meilisearch
+  and pgvector it rewrites the index. `trace.lexicon.stopWords` says where they
+  applied. The Milvus analyzer parameters follow Milvus's documented stop filter
+  but have not been run against a live Milvus server yet.
+
+- **Glossary**: acronyms, jargon and internal names the embeddings cannot
+  know. One entry per line:
+
+  ```text
+  # comments start with '#'
+  KPI = key performance indicator
+  HR, human resources = the department that manages staff and payroll
+  PTO, annual leave, vacation
+  ```
+
+  `glossaryFile` is the installation glossary; a search adds the collection's
+  with `glossary` (`parseGlossary(text).entries`), which wins on shared terms.
+  The entries whose terms occur in the question (or in the last user turn)
+  are given to the query rewriter and the query expander, which add the
+  meaning or the equivalents to the search. Without a rewriter or expander
+  the glossary has no effect. With history the rewriter runs anyway; on a
+  first question it runs only because of the glossary — one extra model call
+  on the questions that use a glossary term. `glossaryRewrite: false` limits
+  the glossary to follow-ups and to the expander. `trace.lexicon` reports the keyword text and the
+  glossary terms used.
+
 ### Query expansion
 
 Users ask colloquially, misspell, or use other words than the documents. With
@@ -319,7 +387,7 @@ variant can add a candidate but not change what is answered.
     "variants": 3,
     "fallbackBelow": 0.4,
     "maxCandidates": 40,
-    "context": "Operating rules of a network of payment agencies."
+    "context": "Internal policies and procedures of the company."
   }
 }
 ```

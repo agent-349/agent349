@@ -6,6 +6,7 @@ import type {
   VectorDocument,
   DocumentMetadata,
 } from '../types.js';
+import type { NativeStopWordsSupport, StopWordsApplyResult } from '../../types/index.js';
 import { VectorStoreAdapter } from './VectorStoreAdapter.js';
 import { RAGError } from '../../errors/RAGError.js';
 import {
@@ -143,9 +144,18 @@ export class WeaviateAdapter extends VectorStoreAdapter {
         vectorizer: 'none',
         vectorIndexConfig: { distance: DISTANCE[config.distanceMetric] },
         // Empty arrays count as null, which is how public chunks (no roles) are
-        // matched. Stop words are off: Weaviate applies them to filters too, and
-        // a tag or role such as "it" or "a" must match exactly.
-        invertedIndexConfig: { indexNullState: true, stopwords: { preset: 'none' } },
+        // matched. No preset stop words: a tag or role such as "it" or "a" must
+        // match exactly. Stop words from the SDK lists, when given, apply only
+        // to word-tokenized properties (content, title); tags, roles and ids
+        // are field-tokenized.
+        invertedIndexConfig: {
+          indexNullState: true,
+          stopwords: {
+            preset: 'none',
+            ...(config.stopWords !== undefined &&
+              config.stopWords.length > 0 && { additions: config.stopWords }),
+          },
+        },
         properties: [
           text('content', 'word'),
           text('title', 'word'),
@@ -411,6 +421,34 @@ export class WeaviateAdapter extends VectorStoreAdapter {
       throw new RAGError(`weaviate: '${collection}' is a reserved collection name`, 'collection');
     }
     return cls;
+  }
+
+  /** Weaviate stop words are part of the class schema and can be changed at runtime. */
+  override get nativeStopWords(): NativeStopWordsSupport {
+    return 'mutable';
+  }
+
+  /**
+   * Replaces the class stop words (`invertedIndexConfig.stopwords`, preset
+   * `none` plus the SDK words as additions) with `PUT /v1/schema/{class}`.
+   * Weaviate removes them from the tokenized BM25 query; the index is not
+   * rebuilt. An empty list clears them.
+   */
+  override async applyStopWords(
+    collection: string,
+    request: { words: string[]; languages: string[] },
+  ): Promise<StopWordsApplyResult> {
+    const cls = this.#className(collection);
+    const schema = await this.#request<Record<string, unknown>>('GET', `/v1/schema/${cls}`);
+    const inverted = (schema['invertedIndexConfig'] as Record<string, unknown> | undefined) ?? {};
+    await this.#request('PUT', `/v1/schema/${cls}`, {
+      ...schema,
+      invertedIndexConfig: {
+        ...inverted,
+        stopwords: { preset: 'none', additions: request.words, removals: [] },
+      },
+    });
+    return { applied: true, engine: this.name, method: 'schema', wordCount: request.words.length };
   }
 
   #request<T>(method: string, path: string, body?: unknown): Promise<T> {

@@ -304,6 +304,40 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     };
   },
 
+  'rag.collection.stop_words': (data) => ({
+    category: 'rag',
+    action: 'collection_stop_words',
+    outcome: data.applied === true ? 'success' : 'failure',
+    severity: data.applied === true ? 'info' : 'warning',
+    detail: {
+      summary:
+        data.applied === true
+          ? `Stop words applied natively to ${data.collection as string} (${data.engine as string})`
+          : `Stop words not applied natively to ${data.collection as string}: ${data.reason as string}`,
+      output: {
+        collection: data.collection,
+        languages: data.languages,
+        engine: data.engine,
+        ...(data.method !== undefined && { method: data.method }),
+        ...(data.wordCount !== undefined && { wordCount: data.wordCount }),
+        ...(data.pending !== undefined && { pending: data.pending }),
+        ...(data.detail !== undefined && { detail: data.detail }),
+        ...(data.reason !== undefined && { reason: data.reason }),
+      },
+    },
+  }),
+
+  'rag.glossary.invalid_lines': (data) => ({
+    category: 'rag',
+    action: 'glossary_invalid_lines',
+    outcome: 'failure',
+    severity: 'warning',
+    detail: {
+      summary: `${data.count as number} line(s) of the RAG glossary file could not be read and were skipped`,
+      output: { file: data.file, count: data.count, lines: data.lines },
+    },
+  }),
+
   'rag.query_expansion.end': (data) => {
     // Variant texts derive from the user's question: counts only, like the query.
     const failed = data.error !== undefined;

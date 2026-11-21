@@ -42,13 +42,24 @@ export type {
 } from './queryRewriting/QueryRewriter.js';
 export { ContextualRewriter } from './queryRewriting/ContextualRewriter.js';
 export { QueryExpander } from './queryRewriting/QueryExpander.js';
+export {
+  StopWords,
+  parseGlossary,
+  mergeGlossaries,
+  matchGlossary,
+  matchGlossaryTerms,
+  formatGlossary,
+  normaliseTerm,
+} from './lexicon/Lexicon.js';
+export type { GlossaryParseResult, StopWordOptions, KeywordQuery } from './lexicon/Lexicon.js';
+export { STOP_WORDS, PROTECTED_WORDS } from './lexicon/stopwords.js';
 export type {
   QueryExpanderOptions,
   QueryExpansionOutcome,
 } from './queryRewriting/QueryExpander.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
 export { RAGPipeline } from './RAGPipeline.js';
-export type { RAGPipelineExpansionOptions } from './RAGPipeline.js';
+export type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';
 export { RAGFacade } from './RAGFacade.js';

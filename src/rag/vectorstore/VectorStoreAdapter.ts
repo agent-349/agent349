@@ -6,6 +6,7 @@ import type {
   VectorDocument,
   DocumentMetadata,
 } from '../types.js';
+import type { NativeStopWordsSupport, StopWordsApplyResult } from '../../types/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VectorStoreAdapter
@@ -245,5 +246,33 @@ export abstract class VectorStoreAdapter {
    */
   async close(): Promise<void> {
     // No owned resources by default.
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Stop words (optional)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether and how the engine applies stop words natively. Default `'none'`:
+   * the SDK then removes them from the keyword query instead.
+   */
+  get nativeStopWords(): NativeStopWordsSupport {
+    return 'none';
+  }
+
+  /**
+   * Applies stop words natively to an existing collection. An empty `words`
+   * list clears them. The default reports `not_supported`.
+   *
+   * @param collection - Collection to configure.
+   * @param request    - The words (from the SDK lists) and the collection languages.
+   */
+  async applyStopWords(
+    collection: string,
+    request: { words: string[]; languages: string[] },
+  ): Promise<StopWordsApplyResult> {
+    void collection;
+    void request;
+    return { applied: false, engine: this.name, reason: 'not_supported' };
   }
 }

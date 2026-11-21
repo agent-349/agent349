@@ -6,6 +6,7 @@ import type {
   VectorDocument,
   DocumentMetadata,
 } from '../types.js';
+import type { NativeStopWordsSupport, StopWordsApplyResult } from '../../types/index.js';
 import { VectorStoreAdapter } from './VectorStoreAdapter.js';
 import { reciprocalRankFusion } from '../fusion/RRF.js';
 import { RAGError } from '../../errors/RAGError.js';
@@ -71,6 +72,29 @@ export interface PgVectorConfig {
 
 // pgvector's HNSW index supports up to 2 000 dimensions for the `vector` type.
 const HNSW_MAX_DIMENSIONS = 2000;
+
+/**
+ * PostgreSQL text-search configuration per language, for native stop words.
+ * These configurations bring PostgreSQL's own stop-word dictionary and
+ * stemmer for the language.
+ */
+const TS_CONFIG_BY_LANGUAGE: Readonly<Record<string, string>> = {
+  es: 'spanish',
+  en: 'english',
+  pt: 'portuguese',
+  fr: 'french',
+  it: 'italian',
+  de: 'german',
+  nl: 'dutch',
+  sv: 'swedish',
+  da: 'danish',
+  no: 'norwegian',
+  fi: 'finnish',
+  ru: 'russian',
+  tr: 'turkish',
+  hu: 'hungarian',
+  ro: 'romanian',
+};
 const UPSERT_BATCH = 500;
 const COLUMNS =
   'id, content, document_id, title, source, mime_type, tenant_id, access_roles, tags, ' +
@@ -144,7 +168,11 @@ export class PgVectorAdapter extends VectorStoreAdapter {
     await this.#ensureMetaTable(pool);
 
     const table = this.#table(collection);
-    const tsConfig = this.#config.textSearchConfig ?? 'simple';
+    const native =
+      config.stopWords !== undefined && config.stopWords.length > 0
+        ? languageTsConfig(config.languages)
+        : undefined;
+    const tsConfig = native ?? this.#config.textSearchConfig ?? 'simple';
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tsConfig)) {
       throw new RAGError(`pgvector: invalid textSearchConfig '${tsConfig}'`, 'textSearchConfig');
     }
@@ -550,6 +578,63 @@ export class PgVectorAdapter extends VectorStoreAdapter {
     return metric;
   }
 
+  /**
+   * Native stop words in PostgreSQL are a text-search configuration: the
+   * collection's generated `tsv` column can be rebuilt with another one.
+   */
+  override get nativeStopWords(): NativeStopWordsSupport {
+    return 'mutable';
+  }
+
+  /**
+   * Rebuilds the collection's `tsv` column with the text-search configuration
+   * of its language (`'spanish'`, `'english'`…), which brings PostgreSQL's own
+   * stop-word dictionary — and its stemmer. The SDK word list is not used:
+   * PostgreSQL reads stop words from dictionary files on the server. Needs a
+   * single language with a configuration; an empty `words` list restores the
+   * adapter's `textSearchConfig` (default `'simple'`). Keyword search picks
+   * the configuration up from the column. Rewrites every row.
+   */
+  override async applyStopWords(
+    collection: string,
+    request: { words: string[]; languages: string[] },
+  ): Promise<StopWordsApplyResult> {
+    const base = { engine: this.name, method: 'text_search_config' as const };
+    let target: string;
+    if (request.words.length === 0) {
+      target = this.#config.textSearchConfig ?? 'simple';
+    } else {
+      const langs = [
+        ...new Set(request.languages.map((l) => l.toLowerCase().split(/[-_]/)[0] ?? '')),
+      ].filter(Boolean);
+      if (langs.length !== 1) return { ...base, applied: false, reason: 'single_language_only' };
+      const mapped = languageTsConfig(langs);
+      if (mapped === undefined) return { ...base, applied: false, reason: 'unsupported_language' };
+      target = mapped;
+    }
+    const pool = await this.#getPool();
+    const exists = await pool.query('SELECT 1 FROM pg_ts_config WHERE cfgname = $1', [target]);
+    if (exists.rows.length === 0)
+      return { ...base, applied: false, reason: 'unsupported_language' };
+    if ((await this.#collectionTsConfig(pool, collection)) === target) {
+      return { ...base, applied: true, detail: `already '${target}'` };
+    }
+    const table = this.#table(collection);
+    const index = quoteIdent(`${this.#indexBase(collection)}_tsv`);
+    // One simple-protocol query: PostgreSQL runs it as a single transaction.
+    await pool.query(
+      `BEGIN;
+       DROP INDEX IF EXISTS ${quoteIdent(this.#schema)}.${index};
+       ALTER TABLE ${table} DROP COLUMN IF EXISTS tsv;
+       ALTER TABLE ${table} ADD COLUMN tsv tsvector GENERATED ALWAYS AS (
+         to_tsvector('${target}', coalesce(title, '') || ' ' || content)
+       ) STORED;
+       CREATE INDEX ${index} ON ${table} USING gin (tsv);
+       COMMIT;`,
+    );
+    return { ...base, applied: true, detail: `'${target}' (PostgreSQL dictionary and stemmer)` };
+  }
+
   /** Text-search configuration baked into the collection's generated column. */
   async #collectionTsConfig(pool: PgVectorPool, collection: string): Promise<string> {
     const res = await pool.query(
@@ -707,4 +792,10 @@ async function importPg(): Promise<PgModule> {
       { cause: err },
     );
   }
+}
+
+/** Text-search configuration for a single collection language, if PostgreSQL has one. */
+function languageTsConfig(languages: string[] | undefined): string | undefined {
+  const langs = [...new Set((languages ?? []).map((l) => l.toLowerCase().split(/[-_]/)[0] ?? ''))];
+  return langs.length === 1 ? TS_CONFIG_BY_LANGUAGE[langs[0]!] : undefined;
 }

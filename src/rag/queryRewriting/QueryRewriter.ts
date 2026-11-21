@@ -6,6 +6,28 @@ import type {
   QueryRewriteOutcome,
 } from '../../types/index.js';
 import type { EventBus } from '../../events/EventBus.js';
+import type { GlossaryEntry } from '../lexicon/Lexicon.js';
+import { formatGlossary } from '../lexicon/Lexicon.js';
+
+/** Per-call input of a rewrite besides the query and the history. */
+export interface RewriteCallOptions {
+  /**
+   * Glossary entries whose terms occur in the query or the conversation:
+   * the rewrite keeps each term and adds its meaning or equivalents, so the
+   * search finds either form.
+   */
+  glossary?: GlossaryEntry[];
+}
+
+/** Prompt section for glossary entries (empty when there are none). */
+export function glossaryPrompt(glossary: GlossaryEntry[] | undefined): string {
+  if (glossary === undefined || glossary.length === 0) return '';
+  return (
+    '\n\nDomain glossary of the document collection:\n' +
+    formatGlossary(glossary) +
+    '\nWhen the query uses a glossary term, keep the term and add its meaning or equivalent terms, so the search finds documents using either form; this applies even when the query is otherwise self-contained. Do not add glossary terms the query does not use.'
+  );
+}
 
 /** Options shared by the built-in LLM query rewriters. */
 export interface QueryRewriterOptions {
@@ -125,11 +147,13 @@ export abstract class QueryRewriter {
    *
    * @param query               - Original user query.
    * @param conversationHistory - Recent messages for context-aware strategies.
+   * @param _options            - Glossary entries; ignored by rewriters that do not use them.
    * @returns The query to search with and how it was obtained. Never throws.
    */
   async rewriteWithOutcome(
     query: string,
     conversationHistory?: LLMMessage[],
+    _options?: RewriteCallOptions,
   ): Promise<QueryRewriteOutcome> {
     const rewritten = await this.rewrite(query, conversationHistory);
     return { query: rewritten, applied: rewritten !== query };

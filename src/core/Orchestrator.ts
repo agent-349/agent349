@@ -120,8 +120,11 @@ import { TEIReranker } from '../rag/reranker/TEIReranker.js';
 import type { RerankerProvider } from '../rag/reranker/RerankerProvider.js';
 import { ContextualRewriter } from '../rag/queryRewriting/ContextualRewriter.js';
 import { HyDERewriter } from '../rag/queryRewriting/HyDERewriter.js';
+import { readFileSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+import { StopWords, parseGlossary } from '../rag/lexicon/Lexicon.js';
 import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
-import type { RAGPipelineExpansionOptions } from '../rag/RAGPipeline.js';
+import type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
 import type { ACLService } from '../security/ACLService.js';
 import type { SecurityMiddlewareChain } from '../security/middleware/SecurityMiddlewareChain.js';
@@ -2361,7 +2364,10 @@ export class Orchestrator {
       this.#tokens,
       queryRewriter,
       ragCfg.retrieval.rerankPolicy,
-      this.#buildQueryExpansion(ragCfg.queryExpansion),
+      {
+        ...this.#buildQueryExpansion(ragCfg.queryExpansion),
+        lexicon: this.#buildLexicon(ragCfg.lexicon),
+      },
     );
 
     const loaderRegistry = new DocumentLoaderRegistry();
@@ -2553,6 +2559,55 @@ export class Orchestrator {
     }
 
     return undefined;
+  }
+
+  /**
+   * Stop words and installation glossary of `rag.lexicon`. A missing glossary
+   * file is a configuration error; unreadable lines are skipped and reported
+   * as `rag.glossary.invalid_lines` (audited) and by `rag.pipeline.glossaryErrors`.
+   *
+   * @throws {@link ConfigError} when `glossaryFile` cannot be read.
+   */
+  #buildLexicon(lxCfg: SDKConfig['rag']['lexicon'] | undefined): RAGPipelineLexiconOptions {
+    if (lxCfg === undefined) return {};
+    const out: RAGPipelineLexiconOptions = {
+      ...(lxCfg.maxGlossaryEntries !== undefined && {
+        maxGlossaryEntries: lxCfg.maxGlossaryEntries,
+      }),
+      ...(lxCfg.glossaryRewrite !== undefined && { glossaryRewrite: lxCfg.glossaryRewrite }),
+      ...(lxCfg.stopWordsMode !== undefined && { stopWordsMode: lxCfg.stopWordsMode }),
+    };
+    if (lxCfg.stopWords !== undefined && lxCfg.stopWords !== false) {
+      out.stopWords = new StopWords({
+        stopWords: lxCfg.stopWords,
+        ...(lxCfg.languages !== undefined && { languages: lxCfg.languages }),
+        ...(lxCfg.extraStopWords !== undefined && { extraStopWords: lxCfg.extraStopWords }),
+        ...(lxCfg.keepWords !== undefined && { keepWords: lxCfg.keepWords }),
+      });
+    }
+    if (lxCfg.glossaryFile !== undefined) {
+      const file = resolvePath(lxCfg.glossaryFile);
+      let text: string;
+      try {
+        text = readFileSync(file, 'utf8');
+      } catch (err) {
+        throw new ConfigError(
+          `rag.lexicon.glossaryFile cannot be read (${file}): ${err instanceof Error ? err.message : String(err)}`,
+          'rag.lexicon.glossaryFile',
+        );
+      }
+      const parsed = parseGlossary(text);
+      out.glossary = parsed.entries;
+      out.glossaryErrors = parsed.errors;
+      if (parsed.errors.length > 0) {
+        this.#bus.emit('rag.glossary.invalid_lines', {
+          file,
+          count: parsed.errors.length,
+          lines: parsed.errors.slice(0, 20),
+        });
+      }
+    }
+    return out;
   }
 
   /**

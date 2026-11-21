@@ -1,6 +1,12 @@
 import type { LLMMessage, LLMRequest, ProviderProbe } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
-import { QueryRewriter, probeError, rewriteReasoningEffort } from './QueryRewriter.js';
+import {
+  QueryRewriter,
+  glossaryPrompt,
+  probeError,
+  rewriteReasoningEffort,
+} from './QueryRewriter.js';
+import type { RewriteCallOptions } from './QueryRewriter.js';
 import type {
   QueryRewriteFallbackReason,
   QueryRewriteOutcome,
@@ -92,9 +98,10 @@ export class HyDERewriter extends QueryRewriter {
   override async rewriteWithOutcome(
     query: string,
     _conversationHistory?: LLMMessage[],
+    options?: RewriteCallOptions,
   ): Promise<QueryRewriteOutcome> {
     const request: LLMRequest = {
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: SYSTEM_PROMPT + glossaryPrompt(options?.glossary),
       messages: [{ role: 'user', content: query }],
       model: this.#model,
       temperature: 0.3, // Slight variability for document diversity

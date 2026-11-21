@@ -687,6 +687,54 @@ export interface SDKConfig {
       reasoningEffort?: ReasoningEffort;
     };
     /**
+     * Lexical handling of the query, the same on every vector store.
+     * Stop words are removed from the keyword component of the search (the
+     * vector component keeps the full question); glossary terms found in the
+     * question reach the query rewriter and the query expander.
+     */
+    lexicon?: {
+      /**
+       * `'auto'` — the built-in lists (es, en, pt, fr, it, de) of `languages`,
+       * or of every built-in language when none is given; `false` (default)
+       * — none; a list — exactly those words. Negations and exclusions
+       * ("no", "sin", "not", "only"…) are never removed.
+       */
+      stopWords?: 'auto' | false | string[];
+      /**
+       * Where stop words apply:
+       * - `'auto'` (default) — natively in the engine when it supports it
+       *   (Meilisearch, Weaviate, pgvector, Milvus at creation), otherwise
+       *   removed from the keyword query by the SDK;
+       * - `'native'` — only natively (never from the query);
+       * - `'query'` — only removed from the keyword query, on every engine.
+       * Native stop words are set per collection: at creation and with
+       * `orch.rag.configureCollection(name, { languages })`.
+       */
+      stopWordsMode?: 'auto' | 'native' | 'query';
+      /** Languages of the collections (ISO 639-1). `RAGQuery.languages` overrides it. */
+      languages?: string[];
+      /** Words added to the stop-word lists. */
+      extraStopWords?: string[];
+      /** Words never removed. */
+      keepWords?: string[];
+      /**
+       * Installation glossary in text format (see `parseGlossary`), one entry
+       * per line: `term = meaning` or `term, equivalent, …`. Read at startup;
+       * a relative path resolves against the working directory. A search's
+       * own `glossary` is merged over it.
+       */
+      glossaryFile?: string;
+      /** Most glossary entries passed to the rewriter and expander per search. Default 20. */
+      maxGlossaryEntries?: number;
+      /**
+       * Whether the query rewriter runs on a question without history only
+       * because it uses glossary terms (one extra model call on those
+       * questions). With `false`, the glossary reaches the rewriter only on
+       * follow-ups, and the expander. Default: `true`.
+       */
+      glossaryRewrite?: boolean;
+    };
+    /**
      * Multi-query retrieval: a small model rewrites the question into a few
      * alternative formulations (formal terminology, corrected spelling,
      * keywords), every one is searched and the results are fused before
@@ -1129,6 +1177,35 @@ function validate(cfg: SDKConfig): void {
     );
   }
   validateVectorStore(cfg.rag);
+  const lx = cfg.rag.lexicon;
+  if (lx !== undefined) {
+    if (lx.stopWordsMode !== undefined && !['auto', 'native', 'query'].includes(lx.stopWordsMode)) {
+      throw new ConfigError(
+        "rag.lexicon.stopWordsMode must be 'auto', 'native' or 'query'",
+        'rag.lexicon.stopWordsMode',
+      );
+    }
+    if (
+      lx.stopWords !== undefined &&
+      lx.stopWords !== 'auto' &&
+      lx.stopWords !== false &&
+      !Array.isArray(lx.stopWords)
+    ) {
+      throw new ConfigError(
+        "rag.lexicon.stopWords must be 'auto', false or a list of words",
+        'rag.lexicon.stopWords',
+      );
+    }
+    if (
+      lx.glossaryFile !== undefined &&
+      (typeof lx.glossaryFile !== 'string' || lx.glossaryFile.trim() === '')
+    ) {
+      throw new ConfigError(
+        'rag.lexicon.glossaryFile must be a file path',
+        'rag.lexicon.glossaryFile',
+      );
+    }
+  }
   const qe = cfg.rag.queryExpansion;
   if (qe !== undefined) {
     if (qe.mode !== undefined && !['off', 'fallback', 'always'].includes(qe.mode)) {

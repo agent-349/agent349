@@ -1,7 +1,13 @@
 import type { LLMMessage, LLMRequest, ProviderProbe } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
-import { QueryRewriter, probeError, rewriteReasoningEffort } from './QueryRewriter.js';
+import {
+  QueryRewriter,
+  glossaryPrompt,
+  probeError,
+  rewriteReasoningEffort,
+} from './QueryRewriter.js';
 import type {
+  RewriteCallOptions,
   QueryRewriteFallbackReason,
   QueryRewriteOutcome,
   QueryRewriterOptions,
@@ -90,19 +96,26 @@ export class ContextualRewriter extends QueryRewriter {
    * Same as {@link rewrite}, reporting whether the rewrite was applied and,
    * when the original query was kept after an attempt, why.
    *
+   * Runs when there is history to resolve or glossary terms to expand;
+   * otherwise the query is kept without a model call.
+   *
    * @param query               - Original user query.
    * @param conversationHistory - Recent conversation messages.
+   * @param options             - Glossary entries matched for this query.
    * @returns The query to search with and how it was obtained. Never throws.
    */
   override async rewriteWithOutcome(
     query: string,
     conversationHistory?: LLMMessage[],
+    options?: RewriteCallOptions,
   ): Promise<QueryRewriteOutcome> {
-    if (conversationHistory === undefined || conversationHistory.length === 0) {
+    const hasHistory = conversationHistory !== undefined && conversationHistory.length > 0;
+    const glossary = glossaryPrompt(options?.glossary);
+    if (!hasHistory && glossary === '') {
       return { query, applied: false };
     }
 
-    const recentHistory = conversationHistory.slice(-this.#historyWindow);
+    const recentHistory = (conversationHistory ?? []).slice(-this.#historyWindow);
     const historyText = recentHistory
       .map((m) => {
         const role = m.role === 'user' ? 'User' : 'Assistant';
@@ -112,11 +125,11 @@ export class ContextualRewriter extends QueryRewriter {
       .join('\n');
 
     const request: LLMRequest = {
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: SYSTEM_PROMPT + glossary,
       messages: [
         {
           role: 'user',
-          content: `Conversation history:\n${historyText}\n\nQuery to rewrite: ${query}`,
+          content: `Conversation history:\n${hasHistory ? historyText : '(none)'}\n\nQuery to rewrite: ${query}`,
         },
       ],
       model: this.#model,

@@ -29,6 +29,17 @@ export interface RAGToolOptions {
   scopeFilters?: (
     context: ExecutionContext,
   ) => Partial<RAGFilter> | undefined | Promise<Partial<RAGFilter> | undefined>;
+  /**
+   * Lexical context of the calling context's collection: its languages
+   * (stop-word lists) and glossary, merged over the installation glossary.
+   * A failure to load it is ignored (the search runs without it).
+   */
+  lexicon?: (
+    context: ExecutionContext,
+  ) =>
+    | Pick<RAGQuery, 'languages' | 'glossary'>
+    | undefined
+    | Promise<Pick<RAGQuery, 'languages' | 'glossary'> | undefined>;
 }
 
 /**
@@ -181,6 +192,15 @@ export function createRAGTool(
         }
       }
 
+      let lexicon: Pick<RAGQuery, 'languages' | 'glossary'> | undefined;
+      if (options.lexicon !== undefined) {
+        try {
+          lexicon = await options.lexicon(context);
+        } catch {
+          lexicon = undefined;
+        }
+      }
+
       const ragQuery: RAGQuery = {
         // Defaults applied first; LLM input overrides them.
         ...defaults,
@@ -196,6 +216,8 @@ export function createRAGTool(
         },
         ...(conversationHistory !== undefined &&
           conversationHistory.length > 0 && { conversationHistory }),
+        ...(lexicon?.languages !== undefined && { languages: lexicon.languages }),
+        ...(lexicon?.glossary !== undefined && { glossary: lexicon.glossary }),
       };
 
       try {

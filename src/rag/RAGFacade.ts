@@ -1,3 +1,4 @@
+import type { StopWordsApplyResult } from '../types/index.js';
 import type {
   ExecutionContext,
   CollectionConfig,
@@ -192,7 +193,30 @@ export class RAGFacade {
       embeddingProvider: this.#embeddingDefaults.embeddingProvider,
       embeddingModel: this.#embeddingDefaults.embeddingModel,
     };
-    await this.#collections.create(name, { ...defaults, ...config });
+    // Native stop words (rag.lexicon) for the collection's languages, unless
+    // the caller set them explicitly.
+    const lexicon =
+      config?.stopWords === undefined
+        ? this.#ragPipeline.stopWordsForCreation(config?.languages)
+        : {};
+    await this.#collections.create(name, { ...defaults, ...lexicon, ...config });
+  }
+
+  /**
+   * Applies the configured stop words (`rag.lexicon`) natively to an existing
+   * collection for its languages, or clears them when stop words are off.
+   * Call it when the collection's languages or the stop-word settings change:
+   * on Meilisearch and pgvector it rewrites the index.
+   *
+   * @param name    - Collection name.
+   * @param options - Languages of the collection (ISO 639-1).
+   * @returns What the engine did; `reason` explains a collection left as is.
+   */
+  async configureCollection(
+    name: string,
+    options: { languages?: string[] } = {},
+  ): Promise<StopWordsApplyResult> {
+    return this.#ragPipeline.configureStopWords(name, options.languages ?? []);
   }
 
   /**

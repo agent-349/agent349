@@ -6,6 +6,7 @@ import type {
   VectorDocument,
   DocumentMetadata,
 } from '../types.js';
+import type { NativeStopWordsSupport, StopWordsApplyResult } from '../../types/index.js';
 import { VectorStoreAdapter } from './VectorStoreAdapter.js';
 import { reciprocalRankFusion } from '../fusion/RRF.js';
 import { RAGError } from '../../errors/RAGError.js';
@@ -136,6 +137,25 @@ export class MilvusAdapter extends VectorStoreAdapter {
   // Collection management
   // ─────────────────────────────────────────────────────────────────────────
 
+  /** Milvus fixes the BM25 analyzer, stop words included, when the collection is created. */
+  override get nativeStopWords(): NativeStopWordsSupport {
+    return 'creation';
+  }
+
+  /**
+   * Milvus cannot change the analyzer of an existing collection: stop words
+   * apply only to collections created with them (`CollectionConfig.stopWords`).
+   * To change them, recreate the collection and re-ingest.
+   */
+  override async applyStopWords(
+    collection: string,
+    request: { words: string[]; languages: string[] },
+  ): Promise<StopWordsApplyResult> {
+    void collection;
+    void request;
+    return { applied: false, engine: this.name, method: 'analyzer', reason: 'creation_only' };
+  }
+
   /** Creates the Milvus collection with its BM25 function and indexes, plus its metadata entry. */
   override async createCollection(collection: string, config: CollectionConfig): Promise<void> {
     const name = this.#name(collection);
@@ -159,7 +179,18 @@ export class MilvusAdapter extends VectorStoreAdapter {
           enableDynamicField: false,
           fields: [
             { ...varchar('id', 512), isPrimary: true },
-            varchar('content', 65535, { enable_analyzer: true }),
+            varchar('content', 65535, {
+              enable_analyzer: true,
+              // Stop words from the SDK lists go into the BM25 analyzer; Milvus
+              // fixes the analyzer when the collection is created.
+              ...(config.stopWords !== undefined &&
+                config.stopWords.length > 0 && {
+                  analyzer_params: {
+                    tokenizer: 'standard',
+                    filter: ['lowercase', { type: 'stop', stop_words: config.stopWords }],
+                  },
+                }),
+            }),
             {
               fieldName: 'dense',
               dataType: 'FloatVector',

@@ -1,5 +1,7 @@
 import type { JSONSchema, LLMRequest, LLMResponse, ProviderProbe } from '../../types/index.js';
 import type { LLMRouter } from '../../llm/LLMRouter.js';
+import type { GlossaryEntry } from '../lexicon/Lexicon.js';
+import { formatGlossary } from '../lexicon/Lexicon.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -16,8 +18,8 @@ export interface QueryExpanderOptions {
    */
   reasoningEffort?: LLMRequest['reasoningEffort'] | null;
   /**
-   * What the collection is about, in one or two sentences (e.g. "operating
-   * rules of a network of payment agencies"). Steers the formal terminology
+   * What the collection is about, in one or two sentences (e.g. "internal
+   * policies and procedures of a company"). Steers the formal terminology
    * of the variants; never shown to end users.
    */
   context?: string;
@@ -124,13 +126,17 @@ export class QueryExpander {
   /**
    * Generates alternative formulations of `query`.
    *
-   * @param query - The (self-contained) user question.
+   * @param query   - The (self-contained) user question.
+   * @param options - Glossary entries whose terms occur in the question.
    * @returns The variants, or none and the error. Never throws.
    */
-  async expand(query: string): Promise<QueryExpansionOutcome> {
+  async expand(
+    query: string,
+    options: { glossary?: GlossaryEntry[] } = {},
+  ): Promise<QueryExpansionOutcome> {
     let response: LLMResponse;
     try {
-      response = await this.#router.call(this.#request(query), this.#provider);
+      response = await this.#router.call(this.#request(query, options.glossary), this.#provider);
     } catch (err) {
       return { variants: [], error: err instanceof Error ? err.message : String(err) };
     }
@@ -174,9 +180,13 @@ export class QueryExpander {
   }
 
   /** The expansion request: structured output where the provider supports it. */
-  #request(query: string): LLMRequest {
+  #request(query: string, glossary?: GlossaryEntry[]): LLMRequest {
     const structured = this.#useStructuredOutput();
-    const context = this.#context !== undefined ? `\n\nAbout the collection: ${this.#context}` : '';
+    const context =
+      (this.#context !== undefined ? `\n\nAbout the collection: ${this.#context}` : '') +
+      (glossary !== undefined && glossary.length > 0
+        ? `\n\nDomain glossary (use these terms and meanings in the alternatives where the query uses them):\n${formatGlossary(glossary)}`
+        : '');
     return {
       model: this.#model,
       systemPrompt: SYSTEM_PROMPT + context,

@@ -385,3 +385,37 @@ describe('MeilisearchAdapter', () => {
     expect(uploaded['accessRoles']).toEqual([]);
   });
 });
+
+describe('MeilisearchAdapter — native stop words', () => {
+  beforeEach(() => {
+    mockUpdateSettings.mockClear();
+  });
+
+  it('sets the stopWords index setting without waiting for the re-indexing task', async () => {
+    mockUpdateSettings.mockReturnValueOnce(enqueuedTask({ taskUid: 42 }));
+    const adapter = new MeilisearchAdapter({ url: 'http://localhost:7700' });
+    expect(adapter.nativeStopWords).toBe('mutable');
+    const result = await adapter.applyStopWords('docs', { words: ['la', 'de'], languages: ['es'] });
+    expect(mockUpdateSettings).toHaveBeenCalledWith({ stopWords: ['la', 'de'] });
+    expect(result).toEqual({
+      applied: true,
+      engine: 'meilisearch',
+      method: 'index_settings',
+      pending: true,
+      wordCount: 2,
+      detail: 'task 42',
+    });
+  });
+
+  it('includes the stop words in the settings applied at creation', async () => {
+    const adapter = new MeilisearchAdapter({ url: 'http://localhost:7700' });
+    await adapter.createCollection('docs', {
+      dimensions: 3,
+      distanceMetric: 'cosine',
+      embeddingProvider: 'openai',
+      embeddingModel: 'openai/m',
+      stopWords: ['la'],
+    });
+    expect(mockUpdateSettings.mock.calls[0]![0]).toMatchObject({ stopWords: ['la'] });
+  });
+});

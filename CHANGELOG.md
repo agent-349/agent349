@@ -72,6 +72,37 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **Lexicon: stop words and glossary, the same on every vector store.** New
+  `rag.lexicon` section.
+  - `stopWords: 'auto'` removes built-in, curated stop words (es, en, pt, fr,
+    it, de; function words only) from the text sent to the keyword component
+    of the search — never from the documents, so nothing is re-indexed and it
+    works on all seven adapters. The vector component keeps the full
+    question. Negations and exclusions ("no", "sin", "not", "only", "não"…)
+    are never removed. `languages` (or `RAGQuery.languages`) picks the lists;
+    `extraStopWords` and `keepWords` tune them. Off by default.
+  - Glossary: `glossaryFile` (installation, text format read by
+    `parseGlossary`: `term = meaning` or `term, equivalent, …`) and
+    `RAGQuery.glossary` (per collection, merged over it). Entries whose terms
+    occur in the question or the last user turn reach the query rewriter and
+    the query expander, which add the meaning or equivalents to the search.
+    The contextual rewriter now also runs without history when glossary terms are present (one model call on those questions); `glossaryRewrite: false` turns that off.
+  - Native stop words: `stopWordsMode` (`'auto'` default, `'native'`,
+    `'query'`). Adapters declare `nativeStopWords` and implement
+    `applyStopWords`: Meilisearch (index setting), Weaviate (class schema),
+    pgvector (text-search configuration of the language, with PostgreSQL's
+    dictionary and stemmer), Milvus (BM25 analyzer, at creation only).
+    `orch.rag.createCollection(name, { languages })` creates collections with
+    them; `orch.rag.configureCollection(name, { languages })` applies or clears
+    them (audited as `rag.collection.stop_words`). Qdrant, Pinecone and the
+    in-memory store apply them from the query.
+  - `createRAGTool(..., { lexicon })` gives the agentic tool the collection's
+    languages and glossary.
+  - Trace: `trace.lexicon` (keyword text, stop words removed, glossary terms).
+    Unreadable glossary lines are skipped, audited
+    (`rag.glossary.invalid_lines`) and exposed as `rag.pipeline.glossaryErrors`;
+    a missing file is a `ConfigError`.
+
 - **Query expansion (multi-query retrieval).** New `rag.queryExpansion`
   section: a small model (`QueryExpander`) rewrites the question into 1–5
   alternative formulations (formal terminology, corrected spelling, keywords),

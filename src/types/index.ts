@@ -1553,6 +1553,33 @@ export interface RAGQuery {
    * threshold after re-ranking) or `'always'`. Needs a configured expander.
    */
   expansion?: QueryExpansionMode;
+  /**
+   * Languages of the collection (ISO 639-1), choosing the built-in stop-word
+   * lists for the keyword component. Overrides `rag.lexicon.languages`.
+   */
+  languages?: string[];
+  /**
+   * Glossary of the collection, merged over the installation glossary
+   * (`rag.lexicon.glossaryFile`). Entries whose terms occur in the question
+   * reach the query rewriter and expander. Use `parseGlossary()` for the text
+   * format.
+   */
+  glossary?: GlossaryEntry[];
+}
+
+/**
+ * One glossary entry: terms of the domain that the search should treat as
+ * the same thing, and optionally what they mean.
+ *
+ * - `{ terms: ['KPI'], definition: 'key performance indicator' }` — an
+ *   acronym or jargon term and its meaning.
+ * - `{ terms: ['PTO', 'annual leave', 'vacation'] }` — equivalent terms.
+ */
+export interface GlossaryEntry {
+  /** One or more equivalent terms (at least one). */
+  terms: string[];
+  /** What the terms mean, when it is not obvious from the other terms. */
+  definition?: string;
 }
 
 /**
@@ -1629,6 +1656,17 @@ export interface RAGTrace {
   originalQuery: string;
   /** The query actually embedded and searched (after rewriting, if any). */
   searchQuery: string;
+  /** Lexical processing of the query; absent when nothing applied. */
+  lexicon?: {
+    /** Where stop words applied: in the engine, or removed from the keyword query. */
+    stopWords?: 'native' | 'query';
+    /** Text sent to the keyword component, when stop words were removed from it. */
+    keywordQuery?: string;
+    /** Stop words removed from the keyword text of the query. */
+    stopWordsRemoved: number;
+    /** Glossary terms found in the question, as written in the glossary. */
+    glossaryTerms: string[];
+  };
   /** Query-expansion step; absent when expansion is off for the search. */
   expansion?: {
     /** Expansion mode applied to this search. */
@@ -1886,6 +1924,47 @@ export interface CollectionConfig {
   embeddingProvider: string;
   /** Embedding model identifier (must match the provider). */
   embeddingModel: string;
+  /**
+   * Stop words the engine applies natively, for adapters that fix them at
+   * creation (Milvus) or accept them then (Meilisearch, Weaviate). Set by the
+   * SDK from `rag.lexicon`; see `VectorStoreAdapter.applyStopWords`.
+   */
+  stopWords?: string[];
+  /**
+   * Languages of the collection (ISO 639-1). pgvector uses a single language
+   * to pick its text-search configuration (`'spanish'`, `'english'`…) when the
+   * SDK applies stop words natively.
+   */
+  languages?: string[];
+}
+
+/**
+ * How a vector store applies stop words natively:
+ * - `'none'` — it cannot; the SDK removes them from the keyword query.
+ * - `'mutable'` — set on an existing collection (Meilisearch, Weaviate, pgvector).
+ * - `'creation'` — only when the collection is created (Milvus).
+ */
+export type NativeStopWordsSupport = 'none' | 'mutable' | 'creation';
+
+/** Result of applying stop words natively to a collection. */
+export interface StopWordsApplyResult {
+  /** Whether the engine now applies the requested stop words (or none, when cleared). */
+  applied: boolean;
+  /** Adapter name. */
+  engine: string;
+  /**
+   * How: index settings (Meilisearch), the class schema (Weaviate), the
+   * text-search configuration (pgvector), the field analyzer (Milvus).
+   */
+  method?: 'index_settings' | 'schema' | 'text_search_config' | 'analyzer';
+  /** The engine applies the change asynchronously (e.g. Meilisearch re-indexing). */
+  pending?: boolean;
+  /** Words sent to the engine (absent when the engine uses its own dictionary). */
+  wordCount?: number;
+  /** Engine-specific detail (task id, text-search configuration…). */
+  detail?: string;
+  /** Why it was not applied. */
+  reason?: 'not_supported' | 'creation_only' | 'single_language_only' | 'unsupported_language';
 }
 
 /**

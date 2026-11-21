@@ -8,7 +8,9 @@ import type {
   ProviderProbe,
 } from './types.js';
 import type {
+  CollectionConfig,
   ModelValidation,
+  StopWordsApplyResult,
   QueryExpansionMode,
   QueryRewriteOutcome,
   QueryRewriterValidation,
@@ -23,6 +25,8 @@ import type { EventBus } from '../events/EventBus.js';
 import type { TokenTracker } from '../tokens/TokenTracker.js';
 import type { QueryExpander } from './queryRewriting/QueryExpander.js';
 import { fuseRankedLists } from './fusion/RRF.js';
+import type { GlossaryEntry, GlossaryParseResult, StopWords } from './lexicon/Lexicon.js';
+import { matchGlossaryTerms, mergeGlossaries } from './lexicon/Lexicon.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -80,6 +84,12 @@ export class RAGPipeline {
   readonly #tokens: TokenTracker;
   readonly #defaultRerankPolicy: 'require' | 'degrade';
   readonly #queryExpander: QueryExpander | undefined;
+  readonly #stopWords: StopWords | undefined;
+  readonly #glossary: GlossaryEntry[];
+  readonly #maxGlossaryEntries: number;
+  readonly #glossaryErrors: GlossaryParseResult['errors'];
+  readonly #glossaryRewrite: boolean;
+  readonly #stopWordsMode: 'auto' | 'native' | 'query';
   readonly #expansion: Required<Omit<RAGPipelineExpansionOptions, 'fallbackBelow'>> &
     Pick<RAGPipelineExpansionOptions, 'fallbackBelow'>;
 
@@ -96,6 +106,8 @@ export class RAGPipeline {
    * @param options.queryExpander - Generates query variants for multi-query retrieval.
    * @param options.expansion - When to expand (`mode`, default `'off'`), the
    *                          fallback threshold and the fused-candidate cap.
+   * @param options.lexicon - Stop words for the keyword component and the
+   *                          installation glossary.
    */
   constructor(
     embeddingRouter: EmbeddingRouter,
@@ -105,7 +117,11 @@ export class RAGPipeline {
     tokenTracker: TokenTracker,
     queryRewriter?: QueryRewriter,
     defaultRerankPolicy: 'require' | 'degrade' = 'require',
-    options: { queryExpander?: QueryExpander; expansion?: RAGPipelineExpansionOptions } = {},
+    options: {
+      queryExpander?: QueryExpander;
+      expansion?: RAGPipelineExpansionOptions;
+      lexicon?: RAGPipelineLexiconOptions;
+    } = {},
   ) {
     this.#embedding = embeddingRouter;
     this.#store = vectorStore;
@@ -115,6 +131,12 @@ export class RAGPipeline {
     this.#queryRewriter = queryRewriter;
     this.#defaultRerankPolicy = defaultRerankPolicy;
     this.#queryExpander = options.queryExpander;
+    this.#stopWords = options.lexicon?.stopWords;
+    this.#glossary = options.lexicon?.glossary ?? [];
+    this.#maxGlossaryEntries = options.lexicon?.maxGlossaryEntries ?? 20;
+    this.#glossaryErrors = options.lexicon?.glossaryErrors ?? [];
+    this.#glossaryRewrite = options.lexicon?.glossaryRewrite ?? true;
+    this.#stopWordsMode = options.lexicon?.stopWordsMode ?? 'auto';
     this.#expansion = {
       mode: options.expansion?.mode ?? 'off',
       maxCandidates: Math.max(1, options.expansion?.maxCandidates ?? 40),
@@ -148,6 +170,71 @@ export class RAGPipeline {
   /** The query rewriter applied before embedding, if any. */
   get queryRewriter(): QueryRewriter | undefined {
     return this.#queryRewriter;
+  }
+
+  /** The installation glossary (`rag.lexicon.glossaryFile`). */
+  get glossary(): GlossaryEntry[] {
+    return this.#glossary;
+  }
+
+  /**
+   * Where stop words apply in this pipeline: `'native'` (the engine),
+   * `'query'` (removed from the keyword query) or `'off'`.
+   */
+  get stopWordsApplication(): 'native' | 'query' | 'off' {
+    if (this.#stopWords === undefined || !this.#stopWords.enabled) return 'off';
+    if (this.#stopWordsMode === 'query') return 'query';
+    if (this.#store.nativeStopWords !== 'none') return 'native';
+    return this.#stopWordsMode === 'native' ? 'off' : 'query';
+  }
+
+  /**
+   * Collection settings for native stop words at creation: the words for
+   * `languages` and the languages themselves (pgvector picks its
+   * text-search configuration from a single language). Empty when stop
+   * words do not apply natively.
+   */
+  stopWordsForCreation(languages?: string[]): Pick<CollectionConfig, 'stopWords' | 'languages'> {
+    if (this.stopWordsApplication !== 'native') return {};
+    const words = this.#stopWords!.list(languages);
+    return {
+      ...(words.length > 0 && { stopWords: words }),
+      ...(languages !== undefined && languages.length > 0 && { languages }),
+    };
+  }
+
+  /**
+   * Applies the stop words of `languages` natively to an existing collection,
+   * or clears them when stop words are off or `stopWordsMode` is `'query'`
+   * (so they are not applied twice). Engines that only take them at
+   * creation (Milvus) report `creation_only`. On Meilisearch and pgvector this rewrites
+   * the index, so call it when the languages or the lists change, not per search.
+   *
+   * @param collection - Collection to configure.
+   * @param languages  - Languages of the collection (ISO 639-1).
+   */
+  async configureStopWords(
+    collection: string,
+    languages: string[] = [],
+  ): Promise<StopWordsApplyResult> {
+    const engine = this.#store.name;
+    if (this.#store.nativeStopWords === 'none') {
+      return { applied: false, engine, reason: 'not_supported' };
+    }
+    // Off, or applied from the query: clear the engine's list so stop words
+    // are not applied twice.
+    const words =
+      this.#stopWords?.enabled === true && this.#stopWordsMode !== 'query'
+        ? this.#stopWords.list(languages)
+        : [];
+    const result = await this.#store.applyStopWords(collection, { words, languages });
+    this.#bus.emit('rag.collection.stop_words', { collection, languages, ...result });
+    return result;
+  }
+
+  /** Lines of the installation glossary file that could not be read. */
+  get glossaryErrors(): GlossaryParseResult['errors'] {
+    return this.#glossaryErrors;
   }
 
   /** The query expander used for multi-query retrieval, if any. */
@@ -349,7 +436,21 @@ export class RAGPipeline {
       minScore = 0,
       rrfK = 60,
       conversationHistory,
+      languages,
     } = ragQuery;
+
+    // Glossary entries the question uses (or the last user turn, for a
+    // follow-up that refers back to a term): they steer the rewrite and the
+    // expansion. Engine-agnostic — nothing is configured in the vector store.
+    const lastUserTurn = [...(conversationHistory ?? [])]
+      .reverse()
+      .find((m) => m.role === 'user' && typeof m.content === 'string');
+    const glossaryMatches = matchGlossaryTerms(
+      mergeGlossaries(this.#glossary, ragQuery.glossary),
+      [rawQuery, ...(lastUserTurn !== undefined ? [lastUserTurn.content as string] : [])],
+      this.#maxGlossaryEntries,
+    );
+    const glossary = glossaryMatches.map((m) => m.entry);
 
     // ── 0. QUERY REWRITING (optional) ────────────────────────────────────────
     let query = rawQuery;
@@ -357,7 +458,15 @@ export class RAGPipeline {
     let rewriteOutcome: QueryRewriteOutcome | undefined;
     if (this.#queryRewriter !== undefined) {
       const rewriteStart = Date.now();
-      rewriteOutcome = await this.#queryRewriter.rewriteWithOutcome(rawQuery, conversationHistory);
+      // On a first question the glossary alone makes the rewriter run (one
+      // model call); `glossaryRewrite: false` keeps it for follow-ups.
+      const hasHistory = (conversationHistory?.length ?? 0) > 0;
+      const passGlossary = glossary.length > 0 && (hasHistory || this.#glossaryRewrite);
+      rewriteOutcome = await this.#queryRewriter.rewriteWithOutcome(
+        rawQuery,
+        conversationHistory,
+        passGlossary ? { glossary } : undefined,
+      );
       query = rewriteOutcome.query;
       queryRewriteLatencyMs = Date.now() - rewriteStart;
       // A fallback is reported here, with the request context, so it reaches
@@ -384,8 +493,19 @@ export class RAGPipeline {
       hybridAlpha,
       filters,
       rrfK,
+      ...(languages !== undefined && { languages }),
     };
     const retrieval = await this.#retrieve(query, retrieveParams, context, emit);
+    const stopWordsApplication = this.stopWordsApplication;
+    const lexicon: RAGTrace['lexicon'] =
+      stopWordsApplication !== 'off' || glossary.length > 0
+        ? {
+            ...(stopWordsApplication !== 'off' && { stopWords: stopWordsApplication }),
+            ...(retrieval.stopWordsRemoved > 0 && { keywordQuery: retrieval.keywordText }),
+            stopWordsRemoved: retrieval.stopWordsRemoved,
+            glossaryTerms: glossaryMatches.map((m) => m.term),
+          }
+        : undefined;
     let candidates = retrieval.merged;
     let embeddingTokens = retrieval.embeddingTokens;
     let embeddingLatencyMs = retrieval.embeddingLatencyMs;
@@ -405,7 +525,7 @@ export class RAGPipeline {
     ): Promise<void> => {
       const expander = this.#queryExpander!;
       const start = Date.now();
-      const outcome = await expander.expand(query);
+      const outcome = await expander.expand(query, glossary.length > 0 ? { glossary } : {});
       if ((outcome.inputTokens ?? 0) + (outcome.outputTokens ?? 0) > 0) {
         await this.#tokens.record(context, {
           inputTokens: outcome.inputTokens ?? 0,
@@ -518,6 +638,7 @@ export class RAGPipeline {
           rewrite: { strategy: this.#queryRewriter.name, outcome: rewriteOutcome },
         }),
       ...(expansion !== undefined && { expansion }),
+      ...(lexicon !== undefined && { lexicon }),
       candidateCount: candidates.length,
       retrievalScores,
       ...(foundBy !== undefined && { foundBy }),
@@ -610,6 +731,12 @@ export class RAGPipeline {
     emit: Emit,
   ): Promise<RetrieveResult> {
     const { providerName, collections, topK, searchMode, hybridAlpha, filters, rrfK } = params;
+    // The keyword component gets the text without stop words; the vector
+    // component always gets the full text.
+    const keyword =
+      this.stopWordsApplication === 'query'
+        ? this.#stopWords!.keywordQuery(text, params.languages)
+        : { text, removed: 0 };
 
     // ── EMBED ────────────────────────────────────────────────────────────
     emit('rag.embed.start', { query: text });
@@ -640,14 +767,14 @@ export class RAGPipeline {
           passages = await this.#store.search(collection, embResult.vector, topK, filters);
           break;
         case 'keyword':
-          passages = await this.#store.keywordSearch(collection, text, topK, filters);
+          passages = await this.#store.keywordSearch(collection, keyword.text, topK, filters);
           break;
         case 'hybrid':
         default:
           passages = await this.#store.hybridSearch(
             collection,
             embResult.vector,
-            text,
+            keyword.text,
             topK,
             hybridAlpha,
             filters,
@@ -661,6 +788,8 @@ export class RAGPipeline {
 
     return {
       merged: deduplicatePassages(allPassages),
+      keywordText: keyword.text,
+      stopWordsRemoved: keyword.removed,
       totalFound: allPassages.length,
       embeddingTokens: embResult.tokensUsed,
       embeddingLatencyMs,
@@ -834,11 +963,14 @@ interface RetrieveParams {
   hybridAlpha: number;
   filters: RAGQuery['filters'];
   rrfK: number;
+  languages?: string[];
 }
 
 /** Result of one retrieval pass. */
 interface RetrieveResult {
   merged: Passage[];
+  keywordText: string;
+  stopWordsRemoved: number;
   totalFound: number;
   embeddingTokens: number;
   embeddingLatencyMs: number;
@@ -871,12 +1003,32 @@ export interface RAGPipelineExpansionOptions {
   maxCandidates?: number;
 }
 
+/** Stop words and installation glossary of the pipeline (`rag.lexicon`). */
+export interface RAGPipelineLexiconOptions {
+  /** Removes stop words from the keyword component of every search. */
+  stopWords?: StopWords;
+  /** Installation glossary; a search's own `glossary` is merged over it. */
+  glossary?: GlossaryEntry[];
+  /** Most glossary entries passed to the rewriter and expander per search. Default 20. */
+  maxGlossaryEntries?: number;
+  /**
+   * Whether the rewriter runs on a question without history only because it
+   * uses glossary terms. Default `true`.
+   */
+  glossaryRewrite?: boolean;
+  /** Where stop words apply: `'auto'` (default), `'native'` or `'query'`. */
+  stopWordsMode?: 'auto' | 'native' | 'query';
+  /** Lines of the glossary file that could not be read (reported, not used). */
+  glossaryErrors?: GlossaryParseResult['errors'];
+}
+
 /** Inputs of {@link buildTrace}. */
 interface TraceInput {
   originalQuery: string;
   searchQuery: string;
   rewrite?: { strategy: string; outcome: QueryRewriteOutcome };
   expansion?: RAGTrace['expansion'];
+  lexicon?: RAGTrace['lexicon'];
   /** Candidates sent to ranking (after any expansion). */
   candidateCount: number;
   /** Retrieval score of each candidate (normalised, from the first search that found it). */
@@ -929,6 +1081,7 @@ function buildTrace(input: TraceInput): RAGTrace {
     searchQuery: input.searchQuery,
     ...(rewrite !== undefined && { rewrite }),
     ...(input.expansion !== undefined && { expansion: input.expansion }),
+    ...(input.lexicon !== undefined && { lexicon: input.lexicon }),
     minScore: input.minScore,
     finalTopK: input.finalTopK,
     candidateCount: input.candidateCount,

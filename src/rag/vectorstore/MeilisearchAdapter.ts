@@ -7,6 +7,7 @@ import type {
   VectorDocument,
   DocumentMetadata,
 } from '../types.js';
+import type { NativeStopWordsSupport, StopWordsApplyResult } from '../../types/index.js';
 import { VectorStoreAdapter } from './VectorStoreAdapter.js';
 import { RAGError } from '../../errors/RAGError.js';
 
@@ -125,7 +126,13 @@ export class MeilisearchAdapter extends VectorStoreAdapter {
     await this.#client.createIndex(collection, { primaryKey: 'id' }).waitTask();
 
     const index = this.#client.index(collection);
-    await index.updateSettings(INDEX_SETTINGS).waitTask();
+    await index
+      .updateSettings({
+        ...INDEX_SETTINGS,
+        ...(config.stopWords !== undefined &&
+          config.stopWords.length > 0 && { stopWords: config.stopWords }),
+      })
+      .waitTask();
 
     // Configure the "userProvided" embedder so Meilisearch knows how to handle
     // the `_vectors.default` field during hybrid/vector search.
@@ -420,6 +427,36 @@ export class MeilisearchAdapter extends VectorStoreAdapter {
       showRankingScore: true,
     });
     return result.hits.map((hit) => this.#toPassage(hit as Record<string, unknown>, collection));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Stop words
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Meilisearch keeps stop words in the index settings, changeable at any time. */
+  override get nativeStopWords(): NativeStopWordsSupport {
+    return 'mutable';
+  }
+
+  /**
+   * Sets the index `stopWords` setting (an empty list clears it). Meilisearch
+   * re-indexes the collection in the background; searches keep working with
+   * the previous setting until the task finishes, so the call does not wait.
+   */
+  override async applyStopWords(
+    collection: string,
+    request: { words: string[]; languages: string[] },
+  ): Promise<StopWordsApplyResult> {
+    const task = await this.#client.index(collection).updateSettings({ stopWords: request.words });
+    const uid = (task as { taskUid?: number } | undefined)?.taskUid;
+    return {
+      applied: true,
+      engine: this.name,
+      method: 'index_settings',
+      pending: true,
+      wordCount: request.words.length,
+      ...(uid !== undefined && { detail: `task ${uid}` }),
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
