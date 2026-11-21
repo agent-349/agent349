@@ -112,6 +112,16 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
 
 ### Fixed
 
+- **OpenAI: a rejected `reasoningEffort` value is substituted, not dropped.**
+  Model generations disagree on the scale (gpt-5 accepts `minimal` but not
+  `none`; later families the reverse). The provider used to retry without the
+  parameter, handing control to the model default (usually `medium`), and a
+  caller that budgeted for minimal reasoning — the LLM re-ranker, the query
+  rewriters — got an empty, truncated answer (`gpt-6-luna` failed every
+  re-ranking parse). It now tries the closest values first (`minimal` → `none`
+  → `low`, `none` → `minimal` → `low`, `xhigh` → `high`), remembers the
+  accepted one per model, and omits the parameter only when none is accepted.
+
 - **A failing query rewriter was recorded as a success.** A rewriter never
   fails the search — on error it keeps the original query — and the audit
   record of `query_rewrite` said `success` either way. A deployment whose
@@ -197,6 +207,33 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
   source is often an internal path or URL, and the synthesis model copied it
   into answers ("Source: /srv/file/…"). Pass `sourceLabel: 'source'` for the
   previous label. `createRAGTool` follows the new default.
+- **`LLMReranker` scores against an anchored rubric, in one call.** The prompt
+  defines levels (1.0 answers the query, 0.7 contains most of the answer, 0.4
+  same subject without the answer, 0.1 tangential, 0.0 unrelated) and tells
+  the model to judge meaning rather than wording, keeping the rules against
+  coincidental matches. The former "strict" prompt scored a colloquial query
+  ("fake dollars") at 0.0 against the passage that answered it in formal
+  terms. Other changes:
+  - `batchSize` defaults to 50, so a normal search is scored in a single call
+    (scores from separate calls are not comparable); larger sets run their
+    batches in parallel instead of one after another.
+  - JSON-Schema output (`{ scores: [{ id, score }] }`) when the provider
+    supports it natively; a plain JSON array otherwise
+    (`structuredOutput: 'off'` forces it). Scores are clamped to [0, 1].
+  - The completion budget adds a reasoning allowance that grows with
+    `reasoningEffort` (256 tokens at `minimal`, 2048 at `low`, …); a fixed
+    256-token headroom made `gpt-5-nano` at `low` fail every parse.
+  - New `samples` option averages independent scoring passes.
+    Measured on a real Spanish corpus (14 colloquial questions with a verified
+    answering passage and 4 out-of-domain ones, 3 runs each): `gpt-6-luna`
+    kept the answering passage in context in 42/42 runs and every
+    out-of-domain question at or below 0.1, with zero run-to-run variance, at
+    2.7 s; `gpt-6.1-sol` and `gpt-6.1-terra` came close. `gpt-5-nano` improved
+    from 6/42 to 23/42 but stays unreliable. With `gpt-5` the rubric made
+    scoring more lenient (an unrelated procedure sharing elements with the
+    query could reach 1.0), so the previous prompt suited that model better.
+    Scores shift upwards; recalibrate `minScore` (0.4–0.5 separated the levels
+    cleanly).
 - **The re-ranker scores every retrieval candidate**, not just `finalTopK`, so
   the trace can report the scores of the passages below the cut. LLM and
   cross-encoder re-rankers already read every candidate; the Cohere re-ranker

@@ -1025,6 +1025,62 @@ describe('parameter relaxation', () => {
     expect(mockCreate.mock.calls[0]![0].reasoning_effort).toBe('minimal');
   });
 
+  it('substitutes the closest accepted reasoning effort before dropping it', async () => {
+    // Newer model families accept 'none' but reject 'minimal'.
+    mockCreate
+      .mockRejectedValueOnce(
+        unsupportedParamError(
+          'reasoning_effort',
+          "Unsupported value: 'reasoning_effort' does not support 'minimal' with this model.",
+        ),
+      )
+      .mockResolvedValueOnce(makeOpenAIResponse({ model: 'gpt-6-luna' }))
+      .mockResolvedValueOnce(makeOpenAIResponse({ model: 'gpt-6-luna' }));
+
+    await provider.call({ ...BASE_REQUEST, model: 'gpt-6-luna', reasoningEffort: 'minimal' });
+    await provider.call({ ...BASE_REQUEST, model: 'gpt-6-luna', reasoningEffort: 'minimal' });
+
+    expect(mockCreate.mock.calls[0]![0].reasoning_effort).toBe('minimal');
+    expect(mockCreate.mock.calls[1]![0].reasoning_effort).toBe('none');
+    // Remembered for the model: the next call sends the substitute directly.
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    expect(mockCreate.mock.calls[2]![0].reasoning_effort).toBe('none');
+  });
+
+  it('walks the substitutes in order and drops the parameter only when none is accepted', async () => {
+    const reject = (): OpenAI.BadRequestError =>
+      unsupportedParamError('reasoning_effort', "'reasoning_effort' is not supported");
+    mockCreate
+      .mockRejectedValueOnce(reject())
+      .mockRejectedValueOnce(reject())
+      .mockRejectedValueOnce(reject())
+      .mockResolvedValueOnce(makeOpenAIResponse({ model: 'compat' }));
+
+    await provider.call({ ...BASE_REQUEST, model: 'compat', reasoningEffort: 'minimal' });
+
+    expect(mockCreate.mock.calls.map((c) => c[0].reasoning_effort)).toEqual([
+      'minimal',
+      'none',
+      'low',
+      undefined,
+    ]);
+  });
+
+  it('keeps substitutions per requested value', async () => {
+    mockCreate
+      .mockRejectedValueOnce(
+        unsupportedParamError('reasoning_effort', "'reasoning_effort' is not supported"),
+      )
+      .mockResolvedValue(makeOpenAIResponse({ model: 'gpt-5' }));
+
+    await provider.call({ ...BASE_REQUEST, model: 'gpt-5', reasoningEffort: 'none' });
+    await provider.call({ ...BASE_REQUEST, model: 'gpt-5', reasoningEffort: 'low' });
+
+    expect(mockCreate.mock.calls[1]![0].reasoning_effort).toBe('minimal');
+    // 'low' was never rejected: sent as requested.
+    expect(mockCreate.mock.calls[2]![0].reasoning_effort).toBe('low');
+  });
+
   it('falls back to legacy max_tokens only if the endpoint rejects max_completion_tokens', async () => {
     // Simulates a non-official endpoint (self-hosted proxy, old Azure apiVersion)
     // that hasn't implemented the modern parameter yet.

@@ -91,9 +91,10 @@ describe('LLMReranker.validate — probes the real scoring call', () => {
     const request = sentRequest(router);
     expect(request.model).toBe('gpt-5-nano');
     expect(request.reasoningEffort).toBe('minimal');
-    expect(request.maxTokens).toBe(1 * 8 + 256);
+    // Visible answer (16 tokens per passage) plus the 'minimal' reasoning allowance.
+    expect(request.maxTokens).toBe(1 * 16 + 256);
     expect(request.temperature).toBe(0);
-    expect(request.systemPrompt).toContain('strict passage relevance scorer');
+    expect(request.systemPrompt).toContain('1.0 — directly answers the query');
     expect(router.call.mock.calls[0]![1]).toBe('openai');
   });
 

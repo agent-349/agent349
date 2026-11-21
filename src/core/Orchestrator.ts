@@ -2452,6 +2452,10 @@ export class Orchestrator {
         ...(rerankerCfg.reasoningEffort !== undefined && {
           reasoningEffort: rerankerCfg.reasoningEffort,
         }),
+        ...(rerankerCfg.samples !== undefined && { samples: rerankerCfg.samples }),
+        ...(rerankerCfg.structuredOutput !== undefined && {
+          structuredOutput: rerankerCfg.structuredOutput,
+        }),
         eventBus: this.#bus,
         // An unparseable response is a re-ranker failure like any other, so it
         // follows the same policy as a failed request.

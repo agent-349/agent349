@@ -661,6 +661,7 @@ export interface SDKConfig {
     reranker?: {
       provider: 'llm' | 'cohere' | 'tei';
       model?: string;
+      /** LLM: max passages per scoring call. Default: 50 (one call per search). */
       batchSize?: number;
       apiKey?: string;
       llmProvider?: string;
@@ -680,6 +681,17 @@ export interface SDKConfig {
        * reasoning. See `LLMRerankerConfig.reasoningEffort`.
        */
       reasoningEffort?: ReasoningEffort;
+      /**
+       * LLM: independent scoring passes per batch, averaged (1–5). Smoothes
+       * the run-to-run variance of small models at `samples` times the cost.
+       * Default: 1. See `LLMRerankerConfig.samples`.
+       */
+      samples?: number;
+      /**
+       * LLM: request JSON-Schema-constrained scores when the provider supports
+       * it (`'auto'`, default) or always parse a plain JSON array (`'off'`).
+       */
+      structuredOutput?: 'auto' | 'off';
       /** TEI: base URL of the Text Embeddings Inference server. */
       baseUrl?: string;
       /** TEI: observability label for the served cross-encoder model. */

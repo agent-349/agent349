@@ -185,7 +185,37 @@ interface ModelQuirks {
    * OpenAI-compatible servers that don't implement the parameter.
    */
   omitReasoningEffort?: boolean;
+  /**
+   * Accepted substitutes for reasoning-effort values the model rejected,
+   * keyed by the requested value (e.g. `{ minimal: 'none' }` on models that
+   * replaced `minimal` with `none`).
+   */
+  reasoningEffortSubstitutes?: Partial<Record<string, string>>;
+  /** Effort values already rejected by the model, so substitution never loops. */
+  rejectedReasoningEfforts?: string[];
 }
+
+/** The reasoning effort the caller asked for (before any learned substitution). */
+function requestedEffort(buildParams: (quirks: ModelQuirks) => object): string | undefined {
+  const effort = (buildParams({}) as { reasoning_effort?: unknown }).reasoning_effort;
+  return typeof effort === 'string' ? effort : undefined;
+}
+
+/**
+ * Closest reasoning-effort values to try, in order, when a model rejects one.
+ *
+ * Model generations disagree on the scale: gpt-5 accepts `minimal` but not
+ * `none`, later families accept `none` but not `minimal`, and not every model
+ * offers `xhigh`. Dropping the parameter instead hands control to the model's
+ * default — usually `medium` — and a caller that budgeted tokens for minimal
+ * reasoning (a re-ranker, a query rewriter) then gets an empty, truncated
+ * answer. Only when no close value is accepted is the parameter omitted.
+ */
+const REASONING_EFFORT_FALLBACKS: Record<string, string[]> = {
+  minimal: ['none', 'low'],
+  none: ['minimal', 'low'],
+  xhigh: ['high'],
+};
 
 /** Accumulator for one function call whose fields arrive across stream chunks. */
 interface StreamedToolCall {
@@ -211,10 +241,11 @@ interface StreamCompletionResult {
 /**
  * Upper bound on how many distinct parameters {@link OpenAIProvider} will
  * relax in a single call before giving up and surfacing the error. Currently
- * `max_tokens`, `temperature` and `reasoning_effort` are recoverable, so 3 is
- * sufficient headroom without risking a retry loop on an unrelated 400.
+ * `max_tokens`, `temperature` and `reasoning_effort` (up to two substitute
+ * values, then omission) are recoverable, so 5 is sufficient headroom without
+ * risking a retry loop on an unrelated 400.
  */
-const MAX_QUIRK_ATTEMPTS = 3;
+const MAX_QUIRK_ATTEMPTS = 5;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenAIProvider
@@ -345,7 +376,7 @@ export class OpenAIProvider
             : { max_completion_tokens: request.maxTokens })),
         ...(request.reasoningEffort !== undefined &&
           !quirks.omitReasoningEffort && {
-            reasoning_effort: request.reasoningEffort,
+            reasoning_effort: OpenAIProvider.#effectiveEffort(request.reasoningEffort, quirks),
           }),
         ...(request.responseFormat !== undefined && {
           response_format: OpenAIProvider.#toResponseFormat(request.responseFormat),
@@ -503,7 +534,7 @@ export class OpenAIProvider
     } catch (err: unknown) {
       const relaxed =
         attempt < MAX_QUIRK_ATTEMPTS
-          ? OpenAIProvider.#relaxUnsupportedParam(err, quirks)
+          ? OpenAIProvider.#relaxUnsupportedParam(err, quirks, requestedEffort(buildParams))
           : undefined;
       if (relaxed === undefined) throw err;
       return this.#createChatCompletion(buildParams, model, relaxed, attempt + 1);
@@ -533,7 +564,7 @@ export class OpenAIProvider
     } catch (err: unknown) {
       const relaxed =
         attempt < MAX_QUIRK_ATTEMPTS
-          ? OpenAIProvider.#relaxUnsupportedParam(err, quirks)
+          ? OpenAIProvider.#relaxUnsupportedParam(err, quirks, requestedEffort(buildParams))
           : undefined;
       if (relaxed === undefined) throw err;
       return this.#createStreamingChatCompletion(
@@ -661,7 +692,11 @@ export class OpenAIProvider
    * the error isn't one we know how to recover from, so the original error
    * propagates unchanged.
    */
-  static #relaxUnsupportedParam(err: unknown, quirks: ModelQuirks): ModelQuirks | undefined {
+  static #relaxUnsupportedParam(
+    err: unknown,
+    quirks: ModelQuirks,
+    requestedEffort?: string,
+  ): ModelQuirks | undefined {
     if (!(err instanceof OpenAI.APIError) || err.status !== 400) return undefined;
 
     const param = err.param ?? OpenAIProvider.#paramFromMessage(err.message);
@@ -676,12 +711,36 @@ export class OpenAIProvider
     if (param === 'temperature' && !quirks.omitTemperature) {
       return { ...quirks, omitTemperature: true };
     }
-    // Endpoint/model doesn't support reasoning effort (common on
-    // OpenAI-compatible servers) — drop it and retry.
+    // The model rejects this reasoning-effort value: try the closest value it
+    // may accept (see REASONING_EFFORT_FALLBACKS) before dropping the
+    // parameter. An endpoint that doesn't implement it at all (common on
+    // OpenAI-compatible servers) ends up with it omitted.
     if (param === 'reasoning_effort' && !quirks.omitReasoningEffort) {
+      if (requestedEffort !== undefined) {
+        const sent = OpenAIProvider.#effectiveEffort(requestedEffort, quirks);
+        const rejected = [...(quirks.rejectedReasoningEfforts ?? []), sent];
+        const next = (REASONING_EFFORT_FALLBACKS[requestedEffort] ?? []).find(
+          (v) => !rejected.includes(v),
+        );
+        if (next !== undefined) {
+          return {
+            ...quirks,
+            rejectedReasoningEfforts: rejected,
+            reasoningEffortSubstitutes: {
+              ...quirks.reasoningEffortSubstitutes,
+              [requestedEffort]: next,
+            },
+          };
+        }
+      }
       return { ...quirks, omitReasoningEffort: true };
     }
     return undefined;
+  }
+
+  /** The reasoning effort actually sent for `requested`, after any learned substitution. */
+  static #effectiveEffort(requested: string, quirks: ModelQuirks): string {
+    return quirks.reasoningEffortSubstitutes?.[requested] ?? requested;
   }
 
   /**

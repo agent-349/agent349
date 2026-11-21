@@ -328,6 +328,12 @@ acl.addPolicy({ resourceType: 'tool', resourceId: 'rag.search', allowedRoles: ['
 - Without a reranker, scores are normalized per collection (the best candidate
   is always 1.0), so `minScore` cannot tell "no relevant result" apart from
   "some result". Enable a reranker if that distinction matters.
+- The `llm` reranker scores every candidate in one call against a fixed
+  rubric (1.0 answers the query, 0.7 most of the answer, 0.4 same subject
+  without the answer, 0.1 tangential, 0.0 unrelated), so `minScore` reads as
+  a level: around 0.5 keeps passages that contain at least part of the
+  answer. Calibrate it with your own questions. Small models are cheaper but
+  less stable; `samples: 3` averages three passes.
 - `rerankPolicy: "require"` fails the search when the reranker is down.
   `"degrade"` falls back to un-reranked results.
 - Call `orch.validateModels()` at startup. It sends each configured model —
