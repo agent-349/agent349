@@ -208,6 +208,14 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
 
 ### Changed
 
+- **`tokens.limitMode` governs quotas only; recording is `tokens.tracking`.**
+  `limitMode: 'disabled'` used to skip recording as well, so a deployment that
+  turned quotas off also lost every usage and cost report (its usage
+  dashboard showed zero after hundreds of calls). Usage is now recorded
+  whatever the quota policy; set the new `tokens.tracking: false` to stop
+  storing usage records. `TokenTracker` takes it as a fifth constructor
+  argument (`{ tracking }`).
+
 - **`formatForContext()` labels passages with the document title by default**
   (falling back to `source`, then `documentId`); it used `source` first. The
   source is often an internal path or URL, and the synthesis model copied it

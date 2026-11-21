@@ -471,7 +471,7 @@ export class AgentLoop {
         },
         options?.onEvent,
       );
-      if (this.#tokens.limitMode !== 'disabled') {
+      if (this.#tokens.tracking) {
         this.#emit(
           'tokens.recorded',
           {

@@ -446,7 +446,7 @@ describe('limit modes and combined limits', () => {
     expect(decision.violation?.window).toBe('monthly');
   });
 
-  it('disabled skips recording and quota reads', async () => {
+  it('disabled skips quota checks but keeps recording usage', async () => {
     const disabled = new TokenTracker(
       new InMemoryAdapter(),
       { perUser: { daily: 1, monthly: 1 } },
@@ -458,8 +458,19 @@ describe('limit modes and combined limits', () => {
     const summary = await disabled.getByUser('acme', 'user-1', todayRange());
     const decision = await disabled.checkLimits('acme', 'user-1', 1_000_000);
 
-    expect(summary.recordCount).toBe(0);
+    expect(summary.recordCount).toBe(1);
     expect(decision.allowed).toBe(true);
     expect(decision.checks).toEqual([]);
+  });
+
+  it('tracking: false stores no usage records, whatever the quota policy', async () => {
+    for (const mode of ['enforce', 'observe', 'disabled'] as const) {
+      const tracker = new TokenTracker(new InMemoryAdapter(), {}, undefined, mode, {
+        tracking: false,
+      });
+      await tracker.record(makeContext(), makeUsage());
+      const summary = await tracker.getByUser('acme', 'user-1', todayRange());
+      expect(summary.recordCount).toBe(0);
+    }
   });
 });

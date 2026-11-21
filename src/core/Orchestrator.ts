@@ -636,6 +636,7 @@ export class Orchestrator {
         config.tokens.limits,
         new PricingTable(config.tokens.pricing),
         config.tokens.limitMode,
+        { tracking: config.tokens.tracking },
       );
     }
 
@@ -973,7 +974,7 @@ export class Orchestrator {
       provider: response.provider,
       reasoningEffort: request.reasoningEffort,
     });
-    if (this.#tokens.limitMode !== 'disabled') {
+    if (this.#tokens.tracking) {
       emit('tokens.recorded', {
         tenantId: context.tenantId,
         userId: context.userId,

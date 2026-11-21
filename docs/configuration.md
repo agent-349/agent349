@@ -50,7 +50,8 @@ are usually functions of your application's data. See
 | -------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `llm.defaultProvider`                        | `claude`                                            | Keyed providers are created only when their key is set                                   |
 | Storage for sessions, memory and tokens      | `memory`                                            | Per process. Use Redis or MongoDB with more than one instance                            |
-| `tokens.limitMode`                           | `observe`                                           | Usage is recorded and over-quota calls are reported, not blocked. Set `enforce` to block |
+| `tokens.limitMode`                           | `observe`                                           | Over-quota calls are reported, not blocked. `enforce` blocks; `disabled` checks no quota |
+| `tokens.tracking`                            | `true`                                              | Usage and cost are recorded regardless of `limitMode`. `false` stores no usage records   |
 | `tokens.limits.perUser`                      | 50,000 / day, 1,000,000 / month                     | Sample values: set your own before enforcing                                             |
 | `tokens.limits.perTenant`                    | 1,000,000 / day, 20,000,000 / month                 |                                                                                          |
 | `tokens.pricing`                             | Two sample entries                                  | Maintain your own price list                                                             |

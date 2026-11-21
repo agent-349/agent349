@@ -314,6 +314,7 @@ export class TokenTracker {
   readonly #limits: TokenLimits;
   readonly #pricing: PricingTable;
   readonly #limitMode: TokenLimitMode;
+  readonly #tracking: boolean;
 
   /**
    * @param store   - Storage backend.
@@ -321,12 +322,17 @@ export class TokenTracker {
    *                  1M tokens/day per tenant, 50K tokens/day per user.
    * @param pricing - Price list used to estimate cost when the LLM provider does
    *                  not report one. Defaults to an empty table (cost 0).
+   * @param limitMode - Quota policy (`enforce`, `observe`, `disabled`). Governs
+   *                  quota checks only, never recording.
+   * @param options.tracking - Record usage. Default `true`; `false` stores no
+   *                  usage records.
    */
   constructor(
     store: StorageAdapter = new InMemoryAdapter(),
     limits: Partial<TokenLimits> = {},
     pricing: PricingTable = new PricingTable(),
     limitMode: TokenLimitMode = 'enforce',
+    options: { tracking?: boolean } = {},
   ) {
     this.#store = store;
     this.#limits = {
@@ -335,6 +341,7 @@ export class TokenTracker {
     };
     this.#pricing = pricing;
     this.#limitMode = limitMode;
+    this.#tracking = options.tracking ?? true;
   }
 
   /**
@@ -369,7 +376,9 @@ export class TokenTracker {
    *                  includes `provider` and `model` to enrich the stored record.
    */
   async record(context: ExecutionContext, usage: UsageData): Promise<void> {
-    if (this.#limitMode === 'disabled') return;
+    // Recording follows `tracking`, not the quota policy: with quotas
+    // disabled, usage and cost reports must keep working.
+    if (!this.#tracking) return;
     const model = usage.model ?? 'unknown';
     const record: TokenUsageRecord = {
       recordId: randomUUID(),
@@ -593,6 +602,11 @@ export class TokenTracker {
 
   get limitMode(): TokenLimitMode {
     return this.#limitMode;
+  }
+
+  /** Whether usage records are stored (`tokens.tracking`). */
+  get tracking(): boolean {
+    return this.#tracking;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

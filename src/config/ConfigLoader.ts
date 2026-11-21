@@ -447,10 +447,18 @@ export interface SDKConfig {
     /** Name of the backend (key in `storage.backends`) for token usage records. */
     backend: string;
     /**
-     * `enforce` blocks requests that exceed a quota, `observe` only reports
-     * quota violations, and `disabled` skips both enforcement and recording.
+     * Quota policy only: `enforce` blocks requests that exceed a quota,
+     * `observe` reports violations without blocking, `disabled` checks no
+     * quota. Usage recording is independent — see {@link tracking}.
      */
     limitMode: 'enforce' | 'observe' | 'disabled';
+    /**
+     * Record token usage (and its estimated cost) per call. Default: `true`.
+     * Independent of `limitMode`: switching quotas off must not blind usage
+     * reporting. Set `false` only to stop storing usage records altogether;
+     * quotas then have no usage to compare against.
+     */
+    tracking: boolean;
     limits: {
       perTenant: { daily: number; monthly: number };
       perUser: { daily: number; monthly: number };
@@ -1011,6 +1019,9 @@ function validate(cfg: SDKConfig): void {
       'tokens.limitMode must be one of: enforce, observe, disabled',
       'tokens.limitMode',
     );
+  }
+  if (typeof cfg.tokens.tracking !== 'boolean') {
+    throw new ConfigError('tokens.tracking must be a boolean', 'tokens.tracking');
   }
   for (const [field, value] of Object.entries({
     'tokens.limits.perTenant.daily': cfg.tokens.limits.perTenant.daily,

@@ -197,8 +197,20 @@ describe('Orchestrator.complete()', () => {
     expect((await orch.tokens.getByUser('acme', 'user-1', todayRange())).recordCount).toBe(1);
   });
 
-  it('disabled calls the provider without storing usage', async () => {
+  it('disabled skips quotas but still records usage', async () => {
     const { orch, provider } = await makeOrchestratorWithMode('disabled');
+
+    await orch.complete(makeRequest(), makeContext(), { provider: 'mock' });
+
+    expect(provider.callCount).toBe(1);
+    expect((await orch.tokens.getByUser('acme', 'user-1', todayRange())).recordCount).toBe(1);
+  });
+
+  it('tokens.tracking: false calls the provider without storing usage', async () => {
+    const config = ConfigLoader.from({ tokens: { limitMode: 'disabled', tracking: false } }).get();
+    const orch = await Orchestrator.fromConfig(config);
+    const provider = new MockProvider();
+    orch.registerProvider(provider);
 
     await orch.complete(makeRequest(), makeContext(), { provider: 'mock' });
 

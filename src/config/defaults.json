@@ -72,6 +72,7 @@
   "tokens": {
     "backend": "memory",
     "limitMode": "observe",
+    "tracking": true,
     "limits": {
       "perTenant": {
         "daily": 1000000,
