@@ -11,7 +11,6 @@ import type {
   BatchResultItem,
   BatchSubmitOptions,
   ContentBlock,
-  ExecutionMode,
   FileUploadInput,
   LLMRequest,
   LLMResponse,
@@ -29,12 +28,7 @@ import { mimeTypeFromPath, readFileBytes } from '../../content/index.js';
 import { assertResponseFormatSupported, buildStructuredOutput } from '../structured.js';
 import { toGenerateContentRequest } from './generateContentMapper.js';
 import { THOUGHT_SIGNATURE_KEY, toInteractionBody } from './interactionsMapper.js';
-import {
-  DEFAULT_GEMINI_PRICING,
-  KNOWN_GEMINI_MODELS,
-  longestPrefixMatch,
-  type GeminiModelPricing,
-} from './models.js';
+import { KNOWN_GEMINI_MODELS } from './models.js';
 import type {
   GenerateContentResponseBody,
   GenerateContentUsage,
@@ -68,12 +62,6 @@ export interface GeminiProviderConfig {
   defaultModel?: string;
   /** Request timeout in milliseconds. Default: 60 000. */
   timeoutMs?: number;
-  /**
-   * Per-model pricing table (USD / 1 000 tokens), merged on top of the built-in
-   * defaults — only models that are new or whose rate changed need an entry.
-   * Batch rates are declared per model, never assumed as a blanket discount.
-   */
-  pricing?: Record<string, GeminiModelPricing>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,11 +171,10 @@ export class GeminiProvider
   override readonly providerType = 'gemini';
 
   readonly #client: GeminiClient;
-  readonly #pricing: Record<string, GeminiModelPricing>;
   readonly #defaultModel: string | undefined;
 
   /**
-   * @param config - Provider configuration (API key, default model, pricing).
+   * @param config - Provider configuration (API key, default model).
    * @param client - Optional pre-constructed client. Used for testing
    *                 (dependency injection) — omit in production.
    */
@@ -195,7 +182,6 @@ export class GeminiProvider
     super();
     this.name = config.name ?? 'gemini';
     this.#defaultModel = config.defaultModel;
-    this.#pricing = { ...DEFAULT_GEMINI_PRICING, ...config.pricing };
     this.#client =
       client ??
       (new GoogleGenAI({
@@ -543,11 +529,7 @@ export class GeminiProvider
     const { content, toolCalls, contentBlocks } = GeminiProvider.#readSteps(
       interaction.steps ?? [],
     );
-    const usage = this.#normaliseInteractionUsage(
-      interaction.usage,
-      interaction.model ?? request.model,
-      'sync',
-    );
+    const usage = this.#normaliseInteractionUsage(interaction.usage);
 
     const structured = buildStructuredOutput(
       content,
@@ -729,7 +711,7 @@ export class GeminiProvider
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Usage & pricing
+  // Usage
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
@@ -740,17 +722,15 @@ export class GeminiProvider
    * tokens — so cost comparisons across providers stay meaningful. They remain
    * separately visible in `performance.reasoningTokens`.
    */
-  #normaliseInteractionUsage(
-    usage: InteractionUsage | undefined,
-    model: string,
-    executionMode: ExecutionMode,
-  ): { usage: LLMResponse['usage']; performance?: LLMResponse['performance'] } {
+  #normaliseInteractionUsage(usage: InteractionUsage | undefined): {
+    usage: LLMResponse['usage'];
+    performance?: LLMResponse['performance'];
+  } {
     const inputTokens = usage?.total_input_tokens ?? 0;
     const visibleOutput = usage?.total_output_tokens ?? 0;
     const thinking = usage?.total_thought_tokens ?? 0;
     const cached = usage?.total_cached_tokens;
     const outputTokens = visibleOutput + thinking;
-    const cost = this.#estimateCost(model, inputTokens, outputTokens, executionMode);
 
     const performance =
       thinking > 0 || (cached !== undefined && cached > 0)
@@ -766,7 +746,6 @@ export class GeminiProvider
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
-        ...(cost !== undefined && { cost }),
         ...(usage?.input_tokens_by_modality !== undefined && {
           inputByModality: usage.input_tokens_by_modality,
         }),
@@ -779,16 +758,15 @@ export class GeminiProvider
   }
 
   /** Normalises `generateContent` usage (batch results) the same way. */
-  #normaliseGenerateContentUsage(
-    usage: GenerateContentUsage | undefined,
-    model: string,
-  ): { usage: LLMResponse['usage']; performance?: LLMResponse['performance'] } {
+  #normaliseGenerateContentUsage(usage: GenerateContentUsage | undefined): {
+    usage: LLMResponse['usage'];
+    performance?: LLMResponse['performance'];
+  } {
     const inputTokens = usage?.promptTokenCount ?? 0;
     const visibleOutput = usage?.candidatesTokenCount ?? 0;
     const thinking = usage?.thoughtsTokenCount ?? 0;
     const cached = usage?.cachedContentTokenCount;
     const outputTokens = visibleOutput + thinking;
-    const cost = this.#estimateCost(model, inputTokens, outputTokens, 'batch');
 
     const toModality = (
       details: Array<{ modality?: string; tokenCount?: number }> | undefined,
@@ -812,33 +790,11 @@ export class GeminiProvider
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
-        ...(cost !== undefined && { cost }),
         ...(inputByModality !== undefined && { inputByModality }),
         ...(outputByModality !== undefined && { outputByModality }),
       },
       ...(performance !== undefined && { performance }),
     };
-  }
-
-  /**
-   * Estimates cost in USD, using the model's batch rates when the work ran in a
-   * batch job. A model with no declared batch rate bills at its synchronous
-   * one: the SDK never assumes a blanket discount.
-   */
-  #estimateCost(
-    model: string,
-    inputTokens: number,
-    outputTokens: number,
-    executionMode: ExecutionMode,
-  ): number | undefined {
-    const pricing = this.#pricing[model] ?? longestPrefixMatch(this.#pricing, model);
-    if (pricing === undefined) return undefined;
-
-    const inputRate =
-      executionMode === 'batch' ? (pricing.batchInput ?? pricing.input) : pricing.input;
-    const outputRate =
-      executionMode === 'batch' ? (pricing.batchOutput ?? pricing.output) : pricing.output;
-    return (inputTokens * inputRate + outputTokens * outputRate) / 1_000;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -949,7 +905,7 @@ export class GeminiProvider
       }));
 
     const model = raw.modelVersion ?? '';
-    const usage = this.#normaliseGenerateContentUsage(raw.usageMetadata, model);
+    const usage = this.#normaliseGenerateContentUsage(raw.usageMetadata);
     const finish = raw.candidates?.[0]?.finishReason;
 
     return {

@@ -54,7 +54,7 @@ are usually functions of your application's data. See
 | `tokens.tracking`                            | `true`                                              | Usage and cost are recorded regardless of `limitMode`. `false` stores no usage records   |
 | `tokens.limits.perUser`                      | 50,000 / day, 1,000,000 / month                     | Sample values: set your own before enforcing                                             |
 | `tokens.limits.perTenant`                    | 1,000,000 / day, 20,000,000 / month                 |                                                                                          |
-| `tokens.pricing`                             | Two sample entries                                  | Maintain your own price list                                                             |
+| `tokens.pricing`, `llm.pricing`              | Empty: the shipped pricing catalog applies          | Override only negotiated rates or models the catalog lacks. See [Pricing](#pricing)      |
 | `agent.maxLoopIterations`                    | 10                                                  |                                                                                          |
 | `tools.defaultTimeoutMs`, `tools.maxRetries` | 10,000 ms, 2                                        |                                                                                          |
 | `tools.defaultLimits`                        | 200 rows, 128 KiB, 15 s                             | For integration tools                                                                    |
@@ -65,6 +65,39 @@ are usually functions of your application's data. See
 
 The complete default configuration is
 [`src/config/defaults.json`](../src/config/defaults.json).
+
+## Pricing
+
+Token usage is always recorded; its cost is an **estimate** computed from a
+pricing catalog. The provider's invoice remains the source of truth.
+
+- The catalog ships with the SDK (`dist/pricing-catalog.json`, USD per 1M
+  tokens): prices, cached and batch rates, and announced retirements of
+  OpenAI, Anthropic, Gemini and Cohere models. Maintainers regenerate it from
+  LiteLLM's community price list before each release
+  (`npm run pricing:update`); curated corrections live in
+  `src/tokens/pricing-overrides.json` and survive regeneration.
+- A model is found by its exact `provider/model` key or by dropping a dated
+  snapshot suffix. Nothing is guessed: an unknown model is recorded with cost
+  0, flagged `unpriced`, counted in `TokenUsageSummary.unpricedTokens`, and
+  reported once with a `pricing.unknown_model` event. `openai-compatible`
+  instances never inherit OpenAI prices; `ollama` and `tei` cost 0.
+- `orch.validateModels()` reports configured models with an announced
+  retirement (`deprecation`, `model.deprecated` event).
+- Override per installation with `llm.pricing` (USD per 1M tokens). Keys are a
+  catalog provider and model, an instance name and model (for example an
+  Azure instance), or a bare model id:
+
+```json config
+{
+  "llm": {
+    "pricing": {
+      "openai/gpt-6.1-sol": { "input": 1.8, "output": 9 },
+      "my-finetune": { "input": 3, "output": 12 }
+    }
+  }
+}
+```
 
 ## A production-shaped example
 

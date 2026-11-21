@@ -76,6 +76,7 @@
     "pack:check": "npm pack --dry-run",
     "typecheck:examples": "tsc -p tsconfig.examples.json",
     "docs:check": "node scripts/check-docs.mjs",
+    "pricing:update": "node scripts/update-pricing.mjs",
     "example:quickstart": "tsx examples/quickstart.ts"
   },
   "engines": {

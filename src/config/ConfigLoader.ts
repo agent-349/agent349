@@ -210,10 +210,10 @@ export interface LLMProviderConfig {
   /** Request timeout in milliseconds. */
   timeoutMs?: number;
   /**
-   * Per-model pricing overrides (USD / 1 000 tokens), merged on top of the
-   * adapter's built-in defaults — only the models that are new or whose rate
-   * changed need an entry here. `openai-compatible` instances have no built-in
-   * pricing table, so cost is reported only for models listed here.
+   * Per-model prices for this instance only (USD / 1 000 tokens), over the
+   * SDK pricing catalog. Prefer `llm.pricing` (USD / 1M tokens). An
+   * `openai-compatible` instance never inherits OpenAI's catalog prices, so
+   * its cost is known only for models priced here or in `llm.pricing`.
    */
   pricing?: Record<
     string,
@@ -295,6 +295,23 @@ export interface SDKConfig {
      * are allowed (different endpoints, credentials, timeouts, pricing, …).
      */
     providers: Record<string, LLMProviderConfig>;
+    /**
+     * Price overrides in USD per 1M tokens, over the pricing catalog shipped
+     * with the SDK. Keys are `provider/model` — a catalog provider
+     * (`openai/gpt-6.1-sol`) or an instance name (`azure/gpt-6.1-sol`) — or a
+     * bare model id for every provider. For negotiated rates, Azure
+     * deployments or models the catalog does not list yet.
+     */
+    pricing?: Record<
+      string,
+      {
+        input?: number;
+        output?: number;
+        cachedInput?: number;
+        batchInput?: number;
+        batchOutput?: number;
+      }
+    >;
     circuitBreaker: {
       /** Number of consecutive failures before opening the circuit. */
       failureThreshold: number;
@@ -463,7 +480,10 @@ export interface SDKConfig {
       perTenant: { daily: number; monthly: number };
       perUser: { daily: number; monthly: number };
     };
-    /** Cost per 1 000 tokens, keyed by model identifier. */
+    /**
+     * Legacy price list: USD per 1 000 tokens, keyed by bare model id, applied
+     * over the pricing catalog for every provider. Prefer `llm.pricing`.
+     */
     pricing: Record<string, { input: number; output: number }>;
   };
   logging: {

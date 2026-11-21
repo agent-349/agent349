@@ -358,6 +358,17 @@ export class RAGPipeline {
 
     const providerName = collWithMeta.embeddingModel.split('/')[0]!;
     const embResult = await this.#embedding.embed(query, providerName);
+    // The query embedding is billed too: record it like the re-ranker's tokens.
+    if (embResult.tokensUsed > 0) {
+      await this.#tokens.record(context, {
+        inputTokens: embResult.tokensUsed,
+        outputTokens: 0,
+        totalTokens: embResult.tokensUsed,
+        provider: providerName,
+        model: embResult.model,
+        toolName: 'rag.search',
+      });
+    }
 
     const embeddingLatencyMs = Date.now() - embedStart;
     emit('rag.embed.end', {
@@ -463,7 +474,7 @@ export class RAGPipeline {
             inputTokens: rerankTokens,
             outputTokens: 0,
             totalTokens: rerankTokens,
-            provider: this.#reranker.name,
+            provider: this.#reranker.billingProvider,
             model: rerankResult.model,
             toolName: 'rag.search',
           });

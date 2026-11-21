@@ -72,6 +72,25 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **Pricing catalog.** Cost estimates come from data instead of per-provider
+  tables in code: `dist/pricing-catalog.json` (USD per 1M tokens, with cached
+  and batch rates and announced retirements), regenerated from LiteLLM's
+  community price list by `npm run pricing:update` before each release, plus
+  curated corrections in `src/tokens/pricing-overrides.json` that a
+  regeneration cannot undo. Override per installation with the new
+  `llm.pricing` (keys `provider/model`, an instance name, or a bare model).
+  New `PricingCatalog`, `CostEstimator` and `orch.pricing`.
+- **Unpriced usage is visible.** A model without a known price is recorded
+  with cost 0 and `unpriced: true`, counted in
+  `TokenUsageSummary.unpricedTokens`, and reported once via
+  `pricing.unknown_model`, instead of silently costing 0.
+- **Retirement warnings.** `validateModels()` adds `deprecation` to models
+  with an announced shutdown and emits `model.deprecated` (audited).
+- **RAG usage is priced.** The query embedding is now recorded, ingestion
+  embeddings carry the real model (they were recorded as `embedding` at cost
+  0), and LLM re-ranker tokens are billed to the re-ranker's LLM provider
+  (`RerankerProvider.billingProvider`).
+
 - **`orch.validateModels()`: probe every configured model at startup.** Sends
   each role the request it really sends — the default LLM, the RAG embedding
   model, the re-ranker and the query rewriter — and reports
@@ -207,6 +226,20 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
   and the redirect and IPv6 rules.
 
 ### Changed
+
+- **Providers no longer price calls.** The built-in pricing tables of the
+  OpenAI, Claude and Gemini adapters are gone, with `OpenAIModelPricing`,
+  `ClaudeModelPricing`, `GeminiModelPricing`, `DEFAULT_GEMINI_PRICING` and the
+  adapters' `pricing` / `disableDefaultPricing` options. The Orchestrator
+  prices every call from the catalog (`llm.providers.<name>.pricing` still
+  works: it becomes an override for that instance). The tables matched by
+  prefix, so `gpt-5.4-mini` was billed as `gpt-5`, new families such as
+  `gpt-6.1-*` reported no cost, and cached input was billed at the full rate.
+  Anthropic cache reads, reported apart from `input_tokens`, are now priced at
+  the cached rate. `TokenTracker` takes any `CostEstimator` (default: the
+  shipped catalog) and `estimateCost()` accepts a `CostQuery`.
+- **`tokens.pricing` defaults to empty**; its two sample entries overrode the
+  catalog.
 
 - **`tokens.limitMode` governs quotas only; recording is `tokens.tracking`.**
   `limitMode: 'disabled'` used to skip recording as well, so a deployment that

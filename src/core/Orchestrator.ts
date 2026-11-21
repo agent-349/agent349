@@ -71,8 +71,14 @@ import { createStorageAdapter } from '../memory/adapters/createStorageAdapter.js
 import type { StorageAdapter } from '../memory/adapters/StorageAdapter.js';
 import type { StorageRegistry } from '../memory/adapters/StorageRegistry.js';
 import { SessionManager } from '../session/SessionManager.js';
-import { TokenTracker, estimateLLMRequestTokens } from '../tokens/TokenTracker.js';
-import { PricingTable } from '../tokens/PricingTable.js';
+import {
+  TokenTracker,
+  costQueryFor,
+  estimateLLMRequestTokens,
+  usageFor,
+} from '../tokens/TokenTracker.js';
+import { PricingCatalog } from '../tokens/PricingCatalog.js';
+import type { PricingEntry } from '../tokens/PricingCatalog.js';
 import { AuditLogger } from '../audit/AuditLogger.js';
 import type { AuditConfig } from '../audit/AuditLogger.js';
 import { AuditStoreAdapter } from '../audit/store/AuditStoreAdapter.js';
@@ -359,6 +365,45 @@ export interface OrchestratorOverrides {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The pricing catalog of a configuration: the catalog shipped with the SDK
+ * plus the config's price overrides, all converted to USD per 1M tokens.
+ * Later layers win: `tokens.pricing` (legacy, per 1K, bare model ids), then
+ * `llm.providers.<name>.pricing` (per 1K, that instance only), then
+ * `llm.pricing` (per 1M).
+ */
+function buildPricingCatalog(config: SDKConfig): PricingCatalog {
+  const providerTypes: Record<string, string> = {};
+  const overrides: Record<string, Partial<PricingEntry>> = {};
+  const merge = (key: string, entry: Partial<PricingEntry>): void => {
+    overrides[key] = { ...overrides[key], ...entry };
+  };
+  for (const [model, price] of Object.entries(config.tokens.pricing)) {
+    merge(model, { input: price.input * 1000, output: price.output * 1000 });
+  }
+  for (const [name, entry] of Object.entries(config.llm.providers)) {
+    providerTypes[name.toLowerCase()] = resolveLLMProviderType(name, entry);
+    for (const [model, price] of Object.entries(entry.pricing ?? {})) {
+      merge(`${name.toLowerCase()}/${model}`, {
+        input: price.input * 1000,
+        output: price.output * 1000,
+        ...(price.batchInput !== undefined && { batchInput: price.batchInput * 1000 }),
+        ...(price.batchOutput !== undefined && { batchOutput: price.batchOutput * 1000 }),
+      });
+    }
+  }
+  for (const [key, price] of Object.entries(config.llm.pricing ?? {})) {
+    const entry: Partial<PricingEntry> = {};
+    if (price.input !== undefined) entry.input = price.input;
+    if (price.output !== undefined) entry.output = price.output;
+    if (price.cachedInput !== undefined) entry.cachedInput = price.cachedInput;
+    if (price.batchInput !== undefined) entry.batchInput = price.batchInput;
+    if (price.batchOutput !== undefined) entry.batchOutput = price.batchOutput;
+    merge(key, entry);
+  }
+  return new PricingCatalog({ providerTypes, overrides });
+}
+
+/**
  * Top-level entry point for the Agent Orchestration SDK.
  *
  * The Orchestrator assembles every internal component into a single, coherent
@@ -634,9 +679,15 @@ export class Orchestrator {
       tokens = new TokenTracker(
         tokensAdapter,
         config.tokens.limits,
-        new PricingTable(config.tokens.pricing),
+        buildPricingCatalog(config),
         config.tokens.limitMode,
-        { tracking: config.tokens.tracking },
+        {
+          tracking: config.tokens.tracking,
+          // A model without a known price is recorded at 0 and flagged; say so once.
+          onUnpriced: (provider: string, model: string): void => {
+            bus.emit('pricing.unknown_model', { provider, model });
+          },
+        },
       );
     }
 
@@ -954,17 +1005,10 @@ export class Orchestrator {
     // Fill in the cost from the configured price list when the provider didn't
     // report one, so the caller and the stored records share a consistent cost.
     if (response.usage.cost === undefined) {
-      response.usage.cost = this.#tokens.estimateCost(
-        response.model,
-        response.usage.inputTokens,
-        response.usage.outputTokens,
-      );
+      const cost = this.#tokens.estimateCost(costQueryFor(response));
+      if (cost !== undefined) response.usage.cost = cost;
     }
-    await this.#tokens.record(context, {
-      ...response.usage,
-      provider: response.provider,
-      model: response.model,
-    });
+    await this.#tokens.record(context, usageFor(response));
 
     emit('llm.call.end', {
       usage: response.usage,
@@ -1152,19 +1196,12 @@ export class Orchestrator {
     for await (const item of provider.streamBatchResults(jobId)) {
       if (item.response !== undefined) {
         succeeded++;
-        const usage = item.response.usage;
-        if (usage.cost === undefined) {
-          usage.cost = this.#tokens.estimateCost(
-            item.response.model,
-            usage.inputTokens,
-            usage.outputTokens,
-          );
+        const batchResponse = { executionMode: 'batch' as const, ...item.response };
+        if (batchResponse.usage.cost === undefined) {
+          const cost = this.#tokens.estimateCost(costQueryFor(batchResponse));
+          if (cost !== undefined) batchResponse.usage.cost = cost;
         }
-        await this.#tokens.record(context, {
-          ...usage,
-          provider: item.response.provider,
-          model: item.response.model,
-        });
+        await this.#tokens.record(context, usageFor(batchResponse));
       } else {
         failed++;
       }
@@ -2170,7 +2207,8 @@ export class Orchestrator {
    * runs out before it answers. That matters most for the query rewriter,
    * which never fails a search — it silently keeps the original query.
    *
-   * Every configured model that fails is reported on the bus — as
+   * Models with an announced retirement carry `deprecation` and emit
+   * `model.deprecated`. Every configured model that fails is reported on the bus — as
    * `model.unavailable` (LLM, embedding), `rag.reranker.unavailable` or
    * `rag.query_rewriter.unavailable` — so the failure reaches the audit log. Never throws: the outcome is in the report,
    * and whether a failure should block startup is the host's decision.
@@ -2209,6 +2247,24 @@ export class Orchestrator {
       });
     }
 
+    // Announced retirements, from the pricing catalog: a model that answers
+    // today can stop on a known date.
+    const catalog = this.#tokens.pricing;
+    if (catalog instanceof PricingCatalog) {
+      for (const m of models) {
+        if (!m.configured || m.model === undefined) continue;
+        const deprecation = catalog.deprecation(m.provider, m.model);
+        if (deprecation === undefined) continue;
+        m.deprecation = deprecation;
+        this.#bus.emit('model.deprecated', {
+          role: m.role,
+          provider: m.provider,
+          model: m.model,
+          ...deprecation,
+        });
+      }
+    }
+
     // The re-ranker and query rewriter probes already emit their own
     // `rag.*.unavailable` events; only the roles probed here need one.
     for (const m of models) {
@@ -2223,6 +2279,15 @@ export class Orchestrator {
     }
 
     return { ok: models.every((m) => !m.configured || m.available), models };
+  }
+
+  /**
+   * The pricing catalog used to estimate the cost of calls, or `undefined`
+   * when a custom token tracker prices them some other way.
+   */
+  get pricing(): PricingCatalog | undefined {
+    const pricing = this.#tokens.pricing;
+    return pricing instanceof PricingCatalog ? pricing : undefined;
   }
 
   /** Probes the default LLM provider and model with a minimal completion. */

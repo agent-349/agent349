@@ -178,6 +178,8 @@ export class IngestionPipeline {
 
     this.#bus.emit('ingest.embed.start', { chunks: chunks.length });
     let totalTokens = 0;
+    // Model that produced the vectors, for pricing the ingestion's tokens.
+    let embeddingModel = collConfig.embeddingModel.split('/').pop() ?? collConfig.embeddingModel;
     const vectorDocs: VectorDocument[] = [];
 
     for (let i = 0; i < chunks.length; i += config.embeddingBatchSize) {
@@ -195,6 +197,7 @@ export class IngestionPipeline {
           metadata: chunk.metadata,
         });
         totalTokens += embedding.tokensUsed ?? 0;
+        if (embedding.model) embeddingModel = embedding.model;
       }
 
       const processed = Math.min(i + config.embeddingBatchSize, chunks.length);
@@ -256,9 +259,9 @@ export class IngestionPipeline {
             inputTokens: totalTokens,
             outputTokens: 0,
             totalTokens,
-            cost: 0,
+            // Priced from the catalog, like any other call (was forced to 0).
             provider: providerName,
-            model: 'embedding',
+            model: embeddingModel,
             toolName: 'rag.ingest',
           },
         );

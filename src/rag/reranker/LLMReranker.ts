@@ -293,6 +293,11 @@ export class LLMReranker extends RerankerProvider {
     };
   }
 
+  /** The LLM provider instance that serves the scoring calls. */
+  override get billingProvider(): string {
+    return this.#provider;
+  }
+
   /** Model this re-ranker scores with. */
   override get model(): string {
     return this.#model;

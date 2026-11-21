@@ -1,3 +1,4 @@
+import type { CostEstimator, CostQuery } from './PricingCatalog.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ export interface ModelPricing {
  * pricing.cost('gpt-6-sol', 1000, 500); // 0.002 + 0.005 = 0.007
  * ```
  */
-export class PricingTable {
+export class PricingTable implements CostEstimator {
   readonly #prices: Record<string, ModelPricing>;
 
   /**
@@ -52,6 +53,15 @@ export class PricingTable {
     const price = this.#prices[model];
     if (price === undefined) return 0;
     return (inputTokens / 1000) * price.input + (outputTokens / 1000) * price.output;
+  }
+
+  /**
+   * {@link CostEstimator} view of the table: the cost, or `undefined` when the
+   * model has no configured price.
+   */
+  estimate(query: CostQuery): number | undefined {
+    if (!this.has(query.model)) return undefined;
+    return this.cost(query.model, query.inputTokens, query.outputTokens);
   }
 
   /** Whether a price is configured for the given model. */

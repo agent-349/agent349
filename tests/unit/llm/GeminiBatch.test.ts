@@ -297,49 +297,6 @@ describe('streamBatchResults', () => {
     expect(items[1]!.response).toBeUndefined();
   });
 
-  it('prices batch results with the model batch rate, not a blanket discount', async () => {
-    const fake = makeState({
-      job: { name: 'batches/j', state: 'JOB_STATE_SUCCEEDED', dest: { fileName: 'files/out' } },
-      resultLines: [successLine('doc-1', 'ok', { prompt: 1_000, candidates: 100 })],
-    });
-    const { client } = makeClient(fake);
-    const provider = new GeminiProvider(
-      {
-        apiKey: 'k',
-        pricing: {
-          'gemini-flash-latest': {
-            input: 0.01,
-            output: 0.02,
-            batchInput: 0.001,
-            batchOutput: 0.002,
-          },
-        },
-      },
-      client,
-    );
-
-    const [item] = await collect(provider.streamBatchResults('batches/j'));
-    // 1000 input * 0.001/1k + 105 output (100 + 5 thinking) * 0.002/1k
-    expect(item!.response?.usage.cost).toBeCloseTo(0.00121, 6);
-    expect(item!.response?.executionMode).toBe('batch');
-  });
-
-  it('falls back to synchronous rates when a model declares no batch price', async () => {
-    const fake = makeState({
-      job: { name: 'batches/j', state: 'JOB_STATE_SUCCEEDED', dest: { fileName: 'files/out' } },
-      resultLines: [successLine('doc-1', 'ok', { prompt: 1_000, candidates: 0 })],
-    });
-    const { client } = makeClient(fake);
-    const provider = new GeminiProvider(
-      { apiKey: 'k', pricing: { 'gemini-flash-latest': { input: 0.01, output: 0.02 } } },
-      client,
-    );
-
-    const [item] = await collect(provider.streamBatchResults('batches/j'));
-    // 1000 * 0.01/1k + 5 thinking tokens * 0.02/1k
-    expect(item!.response?.usage.cost).toBeCloseTo(0.0101, 6);
-  });
-
   it('yields nothing when the job has produced no result file yet', async () => {
     const fake = makeState({ job: { name: 'batches/j', state: 'JOB_STATE_RUNNING' } });
     const { client } = makeClient(fake);

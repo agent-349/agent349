@@ -133,11 +133,34 @@ describe('Orchestrator.complete()', () => {
     expect(byUser.totalOutputTokens).toBe(10);
   });
 
-  it('fills in the estimated cost when the provider does not report one', async () => {
+  it('leaves the cost unknown, and says so once, for a model without a price', async () => {
     const { orch } = await makeOrchestrator();
+    const unknown: unknown[] = [];
+    orch.events.on('pricing.unknown_model', (e) => unknown.push(e.data));
+
     const resp = await orch.complete(makeRequest(), makeContext(), { provider: 'mock' });
-    // mock-model is not in the pricing table → estimated cost 0, but defined.
-    expect(resp.usage.cost).toBeDefined();
+    await orch.complete(makeRequest(), makeContext(), { provider: 'mock' });
+
+    expect(resp.usage.cost).toBeUndefined();
+    expect(unknown).toEqual([{ provider: 'mock', model: 'mock-model' }]);
+    const summary = await orch.tokens.getByUser('acme', 'user-1', todayRange());
+    expect(summary.totalCostUsd).toBe(0);
+    expect(summary.unpricedTokens).toBe(60);
+  });
+
+  it('prices the call from llm.pricing (USD per 1M tokens)', async () => {
+    const config = ConfigLoader.from({
+      llm: { pricing: { 'mock/mock-model': { input: 1, output: 2 } } },
+    }).get();
+    const orch = await Orchestrator.fromConfig(config);
+    orch.registerProvider(new MockProvider());
+
+    const resp = await orch.complete(makeRequest(), makeContext(), { provider: 'mock' });
+
+    // 20 × 1/1M + 10 × 2/1M
+    expect(resp.usage.cost).toBeCloseTo(0.00004, 10);
+    const summary = await orch.tokens.getByUser('acme', 'user-1', todayRange());
+    expect(summary.unpricedTokens).toBe(0);
   });
 
   it('emits llm.call.start/end and tokens.recorded with _context attribution', async () => {

@@ -58,7 +58,6 @@ const BUILTIN_FACTORIES: Readonly<Record<LLMProviderType, LLMAdapterFactory>> = 
       ...(cfg.headers !== undefined && { defaultHeaders: cfg.headers }),
       ...(cfg.maxRetries !== undefined && { maxRetries: cfg.maxRetries }),
       ...(cfg.timeoutMs !== undefined && { timeoutMs: cfg.timeoutMs }),
-      ...(cfg.pricing !== undefined && { pricing: cfg.pricing }),
     });
   },
 
@@ -73,10 +72,6 @@ const BUILTIN_FACTORIES: Readonly<Record<LLMProviderType, LLMAdapterFactory>> = 
       ...(cfg.headers !== undefined && { defaultHeaders: cfg.headers }),
       ...(cfg.maxRetries !== undefined && { maxRetries: cfg.maxRetries }),
       ...(cfg.timeoutMs !== undefined && { timeoutMs: cfg.timeoutMs }),
-      // No built-in OpenAI pricing table: compatible model ids should not
-      // inherit OpenAI rates. Cost is reported only for models in `pricing`.
-      disableDefaultPricing: true,
-      ...(cfg.pricing !== undefined && { pricing: cfg.pricing }),
     }),
 
   gemini: (name, cfg) => {
@@ -87,7 +82,6 @@ const BUILTIN_FACTORIES: Readonly<Record<LLMProviderType, LLMAdapterFactory>> = 
       apiKey: cfg.apiKey,
       ...(cfg.defaultModel !== undefined && { defaultModel: cfg.defaultModel }),
       ...(cfg.timeoutMs !== undefined && { timeoutMs: cfg.timeoutMs }),
-      ...(cfg.pricing !== undefined && { pricing: cfg.pricing }),
     });
   },
 
@@ -100,7 +94,6 @@ const BUILTIN_FACTORIES: Readonly<Record<LLMProviderType, LLMAdapterFactory>> = 
       ...(cfg.headers !== undefined && { defaultHeaders: cfg.headers }),
       ...(cfg.maxRetries !== undefined && { maxRetries: cfg.maxRetries }),
       ...(cfg.timeoutMs !== undefined && { timeoutMs: cfg.timeoutMs }),
-      ...(cfg.pricing !== undefined && { pricing: cfg.pricing }),
     });
   },
 

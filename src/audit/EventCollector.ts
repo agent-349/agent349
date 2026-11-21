@@ -346,6 +346,33 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     metrics: { durationMs: data.latencyMs as number },
   }),
 
+  'model.deprecated': (data) => ({
+    category: 'llm',
+    action: 'model_deprecated',
+    outcome: 'success',
+    severity: 'warning',
+    detail: {
+      summary: `Configured ${data.role as string} model ${data.model as string} retires on ${data.shutdown as string}`,
+      output: {
+        role: data.role,
+        model: data.model,
+        shutdown: data.shutdown,
+        ...(data.replacement !== undefined && { replacement: data.replacement }),
+      },
+    },
+  }),
+
+  'pricing.unknown_model': (data) => ({
+    category: 'system',
+    action: 'pricing_unknown_model',
+    outcome: 'success',
+    severity: 'warning',
+    detail: {
+      summary: `No price known for ${data.provider as string}/${data.model as string}: its cost is recorded as 0`,
+      output: { provider: data.provider, model: data.model },
+    },
+  }),
+
   'model.unavailable': (data) => ({
     category: 'llm',
     action: 'model_unavailable',

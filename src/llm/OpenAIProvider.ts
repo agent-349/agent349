@@ -33,18 +33,6 @@ import { ProviderError, UnsupportedCapabilityError } from '../errors/index.js';
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Pricing rates per 1 000 tokens in USD for an OpenAI model. */
-export interface OpenAIModelPricing {
-  /** USD per 1 000 prompt tokens. */
-  input: number;
-  /** USD per 1 000 completion tokens. */
-  output: number;
-  /** USD per 1 000 prompt tokens when the request ran in a batch job. */
-  batchInput?: number;
-  /** USD per 1 000 completion tokens when the request ran in a batch job. */
-  batchOutput?: number;
-}
-
 /**
  * Configuration accepted by {@link OpenAIProvider}.
  *
@@ -91,12 +79,6 @@ export interface OpenAIProviderConfig {
    */
   defaultHeaders?: Record<string, string>;
   /**
-   * When `true`, the built-in OpenAI pricing table is not applied — cost is
-   * reported only for models explicitly listed in `pricing`. Set for
-   * OpenAI-compatible endpoints whose model ids should not inherit OpenAI rates.
-   */
-  disableDefaultPricing?: boolean;
-  /**
    * Azure API version (e.g. `'2024-02-01'`).
    * When present, the provider uses `AzureOpenAI` automatically.
    */
@@ -107,55 +89,11 @@ export interface OpenAIProviderConfig {
   maxRetries?: number;
   /** Request timeout in milliseconds. Default: 30 000. */
   timeoutMs?: number;
-  /**
-   * Per-model pricing table (USD / 1 000 tokens), merged on top of
-   * {@link DEFAULT_PRICING} — entries here override the built-in default for
-   * the same key, and any model not listed here still falls back to the
-   * built-in table. This means overrides only need to name the models that
-   * are new or whose price changed, not the full table. Pass an entry with
-   * the current model to keep pricing correct as OpenAI's price list changes
-   * without needing an SDK update — see `config.llm.providers.openai.pricing`
-   * in the application's runtime config.
-   */
-  pricing?: Record<string, OpenAIModelPricing>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal constants
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Approximate OpenAI pricing (USD / 1 000 tokens). Updated periodically —
- * treat as a reasonable baseline, not a live source of truth. Verify against
- * OpenAI's current pricing page before relying on this for billing, and
- * prefer overriding via `OpenAIProviderConfig.pricing` (merged on top of this
- * table) when a rate drifts rather than waiting on an SDK update.
- */
-const DEFAULT_PRICING: Record<string, OpenAIModelPricing> = {
-  // Current generation, from OpenAI's published rates as of September 2026.
-  'gpt-6-astra': { input: 0.01, output: 0.05, batchInput: 0.005, batchOutput: 0.025 },
-  'gpt-6-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
-  'gpt-6-luna': { input: 0.0001, output: 0.0005, batchInput: 0.00005, batchOutput: 0.00025 },
-  // gpt-6.1 / gpt-6.2 and gpt-5.6, standard rates from OpenAI's pricing page
-  // (November 2026). Listed explicitly: 'gpt-6-sol' is not a prefix of
-  // 'gpt-6.1-sol', so without them these models reported no cost at all.
-  'gpt-6.1-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
-  'gpt-6.1-terra': { input: 0.001, output: 0.005, batchInput: 0.0005, batchOutput: 0.0025 },
-  'gpt-6.2-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
-  'gpt-6.2-astra': { input: 0.008, output: 0.04, batchInput: 0.004, batchOutput: 0.02 },
-  'gpt-5.6-sol': { input: 0.004, output: 0.02, batchInput: 0.002, batchOutput: 0.01 },
-  'gpt-5.6-terra': { input: 0.002, output: 0.012, batchInput: 0.001, batchOutput: 0.006 },
-  'gpt-5.6-luna': { input: 0.0002, output: 0.0012, batchInput: 0.0001, batchOutput: 0.0006 },
-  // Earlier models, kept so existing deployments stay priced.
-  'gpt-5': { input: 0.00125, output: 0.01, batchInput: 0.000625, batchOutput: 0.005 },
-  'gpt-5-mini': { input: 0.00025, output: 0.002, batchInput: 0.000125, batchOutput: 0.001 },
-  'gpt-5-nano': { input: 0.00005, output: 0.0004, batchInput: 0.000025, batchOutput: 0.0002 },
-  'gpt-4o': { input: 0.005, output: 0.015, batchInput: 0.0025, batchOutput: 0.0075 },
-  'gpt-4o-mini': { input: 0.00015, output: 0.0006, batchInput: 0.000075, batchOutput: 0.0003 },
-  'gpt-4-turbo': { input: 0.01, output: 0.03, batchInput: 0.005, batchOutput: 0.015 },
-  'gpt-4': { input: 0.03, output: 0.06, batchInput: 0.015, batchOutput: 0.03 },
-  'gpt-3.5-turbo': { input: 0.0005, output: 0.0015, batchInput: 0.00025, batchOutput: 0.00075 },
-};
 
 /** OpenAI's documented per-request file payload ceiling. */
 const INLINE_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -305,7 +243,6 @@ export class OpenAIProvider
   override readonly providerType: string;
 
   readonly #client: OpenAI;
-  readonly #pricing: Record<string, OpenAIModelPricing>;
   readonly #capabilities: ProviderCapabilities;
   /**
    * Per-model quirks discovered on a previous call (e.g. "this model needs
@@ -328,13 +265,6 @@ export class OpenAIProvider
       ...config.capabilities,
     };
     this.#client = client ?? OpenAIProvider.#createClient(config);
-    // Merge (not replace): an override for one model shouldn't require
-    // re-listing every other model that already has a correct built-in price.
-    // OpenAI-compatible endpoints can opt out of the built-in table so their
-    // model ids don't inadvertently inherit OpenAI's rates.
-    this.#pricing = config.disableDefaultPricing
-      ? { ...config.pricing }
-      : { ...DEFAULT_PRICING, ...config.pricing };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1024,7 +954,7 @@ export class OpenAIProvider
       }
     }
 
-    // ── Usage & cost ──────────────────────────────────────────────────────
+    // ── Usage ──────────────────────────────────────────────────────
     const inputTokens = raw.usage?.prompt_tokens ?? 0;
     const outputTokens = raw.usage?.completion_tokens ?? 0;
     const reasoningTokens = raw.usage?.completion_tokens_details?.reasoning_tokens;
@@ -1034,7 +964,6 @@ export class OpenAIProvider
       streamTimings?.generationMs !== undefined && streamTimings.generationMs > 0
         ? visibleOutputTokens / (streamTimings.generationMs / 1_000)
         : undefined;
-    const cost = this.#estimateCost(raw.model, inputTokens, outputTokens, executionMode);
 
     const structured = buildStructuredOutput(
       content,
@@ -1055,7 +984,6 @@ export class OpenAIProvider
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
-        ...(cost !== undefined && { cost }),
       },
       model: raw.model,
       provider: this.name,
@@ -1413,48 +1341,6 @@ export class OpenAIProvider
       default:
         return 'end';
     }
-  }
-
-  #estimateCost(
-    model: string,
-    inputTokens: number,
-    outputTokens: number,
-    executionMode: ExecutionMode = 'sync',
-  ): number | undefined {
-    const pricing =
-      this.#pricing[model] ?? OpenAIProvider.#longestPrefixMatch(this.#pricing, model);
-
-    if (pricing === undefined) return undefined;
-
-    // Batch rates are declared per model, never assumed as a blanket discount.
-    const inputRate =
-      executionMode === 'batch' ? (pricing.batchInput ?? pricing.input) : pricing.input;
-    const outputRate =
-      executionMode === 'batch' ? (pricing.batchOutput ?? pricing.output) : pricing.output;
-    return (inputTokens * inputRate + outputTokens * outputRate) / 1_000;
-  }
-
-  /**
-   * Finds the pricing entry whose key is the **longest** matching prefix of
-   * `model`. Plain first-match iteration would be order-dependent — e.g.
-   * with both `'gpt-5'` and `'gpt-5-mini'` as keys, a dated snapshot like
-   * `'gpt-5-mini-2026-03-01'` matches both prefixes, and picking whichever key
-   * happens to iterate first would silently price a mini/nano call at the
-   * full model's (much higher) rate.
-   */
-  static #longestPrefixMatch(
-    pricing: Record<string, OpenAIModelPricing>,
-    model: string,
-  ): OpenAIModelPricing | undefined {
-    let bestKey: string | undefined;
-    let bestValue: OpenAIModelPricing | undefined;
-    for (const [key, value] of Object.entries(pricing)) {
-      if (model.startsWith(key) && (bestKey === undefined || key.length > bestKey.length)) {
-        bestKey = key;
-        bestValue = value;
-      }
-    }
-    return bestValue;
   }
 
   #wrapError(err: unknown, model: string): unknown {

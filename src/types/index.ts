@@ -1374,8 +1374,10 @@ export interface TokenUsageRecord {
   inputTokens: number;
   /** Number of completion (output) tokens generated. */
   outputTokens: number;
-  /** Estimated cost in USD based on configured pricing. */
+  /** Estimated cost in USD based on configured pricing (0 when `unpriced`). */
   estimatedCostUsd: number;
+  /** `true` when no price was known for the model: the cost is unknown, not 0. */
+  unpriced?: boolean;
   /** UTC timestamp of the call. */
   timestamp: Date;
 }
@@ -1390,6 +1392,11 @@ export interface TokenUsageSummary {
   totalOutputTokens: number;
   /** Total estimated cost in USD across all records. */
   totalCostUsd: number;
+  /**
+   * Tokens of records without a known price, not included in `totalCostUsd`.
+   * Non-zero means the total cost is a lower bound.
+   */
+  unpricedTokens: number;
   /** Per-model breakdown of token counts and costs. */
   byModel: Record<string, { tokens: number; cost: number }>;
   /** Per-provider breakdown of token counts and costs. */
@@ -1733,6 +1740,11 @@ export interface ModelValidation {
   error?: string;
   /** Milliseconds the probe took (absent when no probe was made). */
   latencyMs?: number;
+  /**
+   * Announced retirement of the model, from the pricing catalog. Present even
+   * when the model still answers: it is a warning, not a failure.
+   */
+  deprecation?: { shutdown: string; replacement?: string; source?: string };
 }
 
 /**

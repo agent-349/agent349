@@ -58,6 +58,14 @@ export abstract class RerankerProvider {
    */
   abstract validate(): Promise<ProviderProbe>;
 
+  /**
+   * Provider billed for this re-ranker's tokens (an LLM provider instance
+   * name, `cohere`, `tei` …), used to price them. Default: the re-ranker name.
+   */
+  get billingProvider(): string {
+    return this.name;
+  }
+
   /** Model this re-ranker scores with, when it reports one (informational). */
   get model(): string | undefined {
     return undefined;

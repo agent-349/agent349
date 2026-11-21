@@ -1,0 +1,2205 @@
+{
+  "version": "2026-11-21",
+  "currency": "USD",
+  "unit": "per_1M_tokens",
+  "source": {
+    "name": "LiteLLM model_prices_and_context_window.json (MIT)",
+    "url": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+    "sha256": "c436a6e5121c438a20b0c014d46129acfe41d2d1b23725bfda733dd901141210"
+  },
+  "models": {
+    "anthropic/claude-fable-5": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "batchInput": 5,
+      "batchOutput": 25,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-fable-5-1": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 0.25,
+      "batchInput": 5,
+      "batchOutput": 25,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-fable-5-2": {
+      "mode": "chat",
+      "input": 8,
+      "output": 40,
+      "cachedInput": 0.2,
+      "batchInput": 4,
+      "batchOutput": 20,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-haiku-4-5": {
+      "mode": "chat",
+      "input": 1,
+      "output": 5,
+      "cachedInput": 0.1,
+      "batchInput": 0.5,
+      "batchOutput": 2.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-haiku-4-5-20251001": {
+      "mode": "chat",
+      "input": 1,
+      "output": 5,
+      "cachedInput": 0.1,
+      "batchInput": 0.5,
+      "batchOutput": 2.5
+    },
+    "anthropic/claude-haiku-5-5": {
+      "mode": "chat",
+      "input": 0.1,
+      "output": 0.5,
+      "cachedInput": 0.01,
+      "batchInput": 0.05,
+      "batchOutput": 0.25,
+      "source": "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+    },
+    "anthropic/claude-mythos-5": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "batchInput": 5,
+      "batchOutput": 25,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-mythos-5-1": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 0.25,
+      "batchInput": 5,
+      "batchOutput": 25,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-mythos-5-2": {
+      "mode": "chat",
+      "input": 8,
+      "output": 40,
+      "cachedInput": 0.2,
+      "batchInput": 4,
+      "batchOutput": 20,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-mythos-preview": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "source": "https://platform.claude.com/docs/en/about-claude/models/overview"
+    },
+    "anthropic/claude-opus-4-5": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-opus-4-5-20251101": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5
+    },
+    "anthropic/claude-opus-4-6": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-opus-4-6-20260205": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5
+    },
+    "anthropic/claude-opus-4-7": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-opus-4-7-20260416": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5
+    },
+    "anthropic/claude-opus-4-8": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-opus-5": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 12.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-opus-5-5": {
+      "mode": "chat",
+      "input": 4,
+      "output": 20,
+      "cachedInput": 0.2,
+      "batchInput": 2,
+      "batchOutput": 10,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-sonnet-4-5": {
+      "mode": "chat",
+      "input": 3,
+      "output": 15,
+      "cachedInput": 0.3,
+      "batchInput": 1.5,
+      "batchOutput": 7.5,
+      "deprecation": {
+        "shutdown": "2026-11-30",
+        "replacement": "anthropic/claude-sonnet-5-5",
+        "source": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
+      },
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-sonnet-4-5-20250929": {
+      "mode": "chat",
+      "input": 3,
+      "output": 15,
+      "cachedInput": 0.3,
+      "batchInput": 1.5,
+      "batchOutput": 7.5,
+      "deprecation": {
+        "shutdown": "2026-11-30",
+        "replacement": "anthropic/claude-sonnet-5-5",
+        "source": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
+      },
+      "source": "https://docs.anthropic.com/en/docs/about-claude/pricing"
+    },
+    "anthropic/claude-sonnet-4-6": {
+      "mode": "chat",
+      "input": 3,
+      "output": 15,
+      "cachedInput": 0.3,
+      "batchInput": 1.5,
+      "batchOutput": 7.5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-sonnet-5": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "anthropic/claude-sonnet-5-5": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.1,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "cohere/c4ai-aya-expanse-32b": {
+      "mode": "chat",
+      "input": 0.5,
+      "output": 1.5,
+      "source": "https://docs.cohere.com/docs/models"
+    },
+    "cohere/command-a-03-2025": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10
+    },
+    "cohere/command-a-plus-05-2026": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/command-a-plus"
+    },
+    "cohere/command-a-reasoning-08-2025": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/command-a-reasoning"
+    },
+    "cohere/command-a-translate-08-2025": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/command-a-translate"
+    },
+    "cohere/command-a-vision-07-2025": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/command-a-vision"
+    },
+    "cohere/command-nightly": {
+      "mode": "chat",
+      "input": 1,
+      "output": 2
+    },
+    "cohere/command-r-08-2024": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6
+    },
+    "cohere/command-r-plus-08-2024": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10
+    },
+    "cohere/command-r7b-12-2024": {
+      "mode": "chat",
+      "input": 0.0375,
+      "output": 0.15,
+      "source": "https://docs.cohere.com/v2/docs/command-r7b"
+    },
+    "cohere/embed-english-light-v3.0": {
+      "mode": "embedding",
+      "input": 0.1,
+      "output": 0
+    },
+    "cohere/embed-english-v3.0": {
+      "mode": "embedding",
+      "input": 0.1,
+      "output": 0
+    },
+    "cohere/embed-multilingual-light-v3.0": {
+      "mode": "embedding",
+      "input": 100,
+      "output": 0
+    },
+    "cohere/embed-multilingual-v3.0": {
+      "mode": "embedding",
+      "input": 0.1,
+      "output": 0
+    },
+    "cohere/embed-v4.0": {
+      "mode": "embedding",
+      "input": 0.12,
+      "output": 0,
+      "source": "https://cohere.com/pricing"
+    },
+    "cohere/embed-v5.0-fast": {
+      "mode": "embedding",
+      "input": 0.08,
+      "output": 0,
+      "source": "https://cohere.com/pricing"
+    },
+    "cohere/embed-v5.0-pro": {
+      "mode": "embedding",
+      "input": 0.12,
+      "output": 0,
+      "source": "https://cohere.com/pricing"
+    },
+    "cohere/north-mini-code-1.0": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/north-mini-code-1.0"
+    },
+    "cohere/north-small-translate-1.0": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://docs.cohere.com/docs/north-small-translate-1.0"
+    },
+    "gemini/deep-research-max-preview-04-2026": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/deep-research-preview-04-2026": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/deep-research-pro-preview-12-2025": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "gemini/gemini/deep-research-preview-04-2026",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/models/deep-research-pro-preview-12-2025"
+    },
+    "gemini/gemini-2.5-computer-use-preview-10-2025": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "deprecation": {
+        "shutdown": "2026-07-28",
+        "replacement": "gemini/gemini/gemini-3.8-flash",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-2.5-flash": {
+      "mode": "chat",
+      "input": 0.3,
+      "output": 2.5,
+      "cachedInput": 0.03,
+      "batchInput": 0.15,
+      "batchOutput": 1.25,
+      "deprecation": {
+        "shutdown": "2026-12-01",
+        "replacement": "gemini/gemini/gemini-3.5-flash-lite",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-2.5-flash-lite": {
+      "mode": "chat",
+      "input": 0.1,
+      "output": 0.4,
+      "cachedInput": 0.01,
+      "batchInput": 0.05,
+      "batchOutput": 0.2,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-2.5-pro": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "batchInput": 0.625,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2026-12-01",
+        "replacement": "gemini/gemini/gemini-3.8-flash",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-2.5-pro-preview-tts": {
+      "mode": "chat",
+      "input": 1,
+      "output": 20,
+      "cachedInput": 0.125,
+      "batchInput": 0.5,
+      "batchOutput": 10,
+      "deprecation": {
+        "shutdown": "2026-12-18",
+        "replacement": "gemini/gemini/gemini-3.8-flash-tts",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3-flash-preview": {
+      "mode": "chat",
+      "input": 0.5,
+      "output": 3,
+      "cachedInput": 0.05,
+      "batchInput": 0.25,
+      "batchOutput": 1.5,
+      "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+    },
+    "gemini/gemini-3.1-flash-lite": {
+      "mode": "chat",
+      "input": 0.25,
+      "output": 1.5,
+      "cachedInput": 0.025,
+      "batchInput": 0.125,
+      "batchOutput": 0.75,
+      "deprecation": {
+        "shutdown": "2027-05-07",
+        "replacement": "gemini/gemini/gemini-3.5-flash-lite",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.1-flash-lite-preview": {
+      "mode": "chat",
+      "input": 0.25,
+      "output": 1.5,
+      "cachedInput": 0.025,
+      "batchInput": 0.125,
+      "batchOutput": 0.75,
+      "deprecation": {
+        "shutdown": "2026-05-25",
+        "replacement": "gemini/gemini/gemini-3.1-flash-lite",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.1-pro-preview": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.1-pro-preview-customtools": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.5-flash": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 9,
+      "cachedInput": 0.15,
+      "batchInput": 0.75,
+      "batchOutput": 4.5,
+      "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+    },
+    "gemini/gemini-3.5-flash-lite": {
+      "mode": "chat",
+      "input": 0.3,
+      "output": 2.5,
+      "cachedInput": 0.03,
+      "batchInput": 0.15,
+      "batchOutput": 1.25,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.6-flash": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 3.75,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 1.875,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-3.7-flash": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 3.75,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 1.875,
+      "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+    },
+    "gemini/gemini-3.8-flash": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 3.75,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 1.875,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-4-argon": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.1,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-4-carbon": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.1,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://aistudio.google.com/docs/pricing#gemini-4-carbon"
+    },
+    "gemini/gemini-4-hydrogen": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 7.5,
+      "cachedInput": 0.075,
+      "batchInput": 0.75,
+      "batchOutput": 3.75,
+      "source": "https://aistudio.google.com/docs/pricing#gemini-4-hydrogen"
+    },
+    "gemini/gemini-4-neon": {
+      "mode": "chat",
+      "input": 3,
+      "output": 15,
+      "cachedInput": 0.15,
+      "batchInput": 1.5,
+      "batchOutput": 7.5,
+      "source": "https://aistudio.google.com/docs/pricing#gemini-4-neon"
+    },
+    "gemini/gemini-embedding-001": {
+      "mode": "embedding",
+      "input": 0.15,
+      "output": 0,
+      "batchInput": 0.075,
+      "deprecation": {
+        "shutdown": "2028-05-14",
+        "replacement": "gemini/gemini/gemini-embedding-2",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-embedding-2": {
+      "mode": "embedding",
+      "input": 0.2,
+      "output": 0,
+      "batchInput": 0.1,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-embedding-2-preview": {
+      "mode": "embedding",
+      "input": 0.2,
+      "output": 0,
+      "batchInput": 0.1,
+      "deprecation": {
+        "shutdown": "2026-11-06",
+        "replacement": "gemini/gemini/gemini-embedding-2",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-exp-1114": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/pricing"
+    },
+    "gemini/gemini-exp-1206": {
+      "mode": "chat",
+      "input": 0.3,
+      "output": 2.5,
+      "cachedInput": 0.03,
+      "source": "https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash-preview"
+    },
+    "gemini/gemini-flash-latest": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 3.75,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 1.875,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-flash-lite-latest": {
+      "mode": "chat",
+      "input": 0.3,
+      "output": 2.5,
+      "cachedInput": 0.03,
+      "batchInput": 0.15,
+      "batchOutput": 1.25,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-gemma-2-27b-it": {
+      "mode": "chat",
+      "input": 0.35,
+      "output": 1.05,
+      "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#foundation_models"
+    },
+    "gemini/gemini-gemma-2-9b-it": {
+      "mode": "chat",
+      "input": 0.35,
+      "output": 1.05,
+      "source": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#foundation_models"
+    },
+    "gemini/gemini-omni-1.1-flash": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 9,
+      "deprecation": {
+        "shutdown": "2026-12-03",
+        "replacement": "gemini/gemini/gemini-omni-1.2-flash",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash"
+    },
+    "gemini/gemini-omni-1.2-flash": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 9,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-omni-flash-preview": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 9,
+      "deprecation": {
+        "shutdown": "2026-10-22",
+        "replacement": "gemini/gemini/gemini-omni-1.2-flash",
+        "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+      },
+      "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+    },
+    "gemini/gemini-pro-latest": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-robotics-er-2-preview": {
+      "mode": "chat",
+      "input": 1,
+      "output": 5,
+      "cachedInput": 0.1,
+      "batchInput": 0.5,
+      "batchOutput": 2.5,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemini-robotics-er-2-streaming-preview": {
+      "mode": "chat",
+      "input": 1,
+      "output": 5,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemma-3-27b-it": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://aistudio.google.com"
+    },
+    "gemini/gemma-4-26b-a4b-it": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/gemma-4-31b-it": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/genie-4": {
+      "mode": "chat",
+      "input": 1.5,
+      "output": 9,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/learnlm-1.5-pro-experimental": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://aistudio.google.com"
+    },
+    "gemini/lyria-3-clip-preview": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/lyria-3-pro-preview": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/deprecations"
+    },
+    "gemini/lyria-3.5": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/lyria-3.5-clip-preview": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/lyria-3.5-pro-preview": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/pricing"
+    },
+    "gemini/lyria-realtime-exp": {
+      "mode": "chat",
+      "input": 0,
+      "output": 0,
+      "source": "https://ai.google.dev/gemini-api/docs/models/lyria-realtime-exp"
+    },
+    "openai/chat-latest": {
+      "mode": "chat",
+      "input": 5,
+      "output": 30,
+      "cachedInput": 0.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/computer-use-preview": {
+      "mode": "chat",
+      "input": 3,
+      "output": 12,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://platform.openai.com/docs/models/computer-use-preview"
+    },
+    "openai/computer-use-preview-2025-03-11": {
+      "mode": "chat",
+      "input": 3,
+      "output": 12,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/computer-use-preview"
+    },
+    "openai/daybreak-blue-latest": {
+      "mode": "chat",
+      "input": 4,
+      "output": 20,
+      "cachedInput": 0.4,
+      "source": "https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest"
+    },
+    "openai/daybreak-red-latest": {
+      "mode": "chat",
+      "input": 12.5,
+      "output": 75,
+      "cachedInput": 1.25,
+      "source": "https://developers.openai.com/api/docs/models/gpt-daybreak-red-latest"
+    },
+    "openai/ft:gpt-3.5-turbo": {
+      "mode": "chat",
+      "input": 3,
+      "output": 6,
+      "batchInput": 1.5,
+      "batchOutput": 3,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:gpt-3.5-turbo-0125": {
+      "mode": "chat",
+      "input": 3,
+      "output": 6,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/ft:gpt-3.5-turbo-0613": {
+      "mode": "chat",
+      "input": 3,
+      "output": 6,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/ft:gpt-3.5-turbo",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/ft:gpt-3.5-turbo-1106": {
+      "mode": "chat",
+      "input": 3,
+      "output": 6,
+      "deprecation": {
+        "shutdown": "2026-09-28",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/ft:gpt-4-0613": {
+      "mode": "chat",
+      "input": 30,
+      "output": 60,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "OpenAI needs to add pricing for this ft model, will be updated when added by OpenAI. Defaulting to base model pricing"
+    },
+    "openai/ft:gpt-4.1-2025-04-14": {
+      "mode": "chat",
+      "input": 3,
+      "output": 12,
+      "cachedInput": 0.75,
+      "batchInput": 1.5,
+      "batchOutput": 6,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:gpt-4.1-mini-2025-04-14": {
+      "mode": "chat",
+      "input": 0.8,
+      "output": 3.2,
+      "cachedInput": 0.2,
+      "batchInput": 0.4,
+      "batchOutput": 1.6,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:gpt-4.1-nano-2025-04-14": {
+      "mode": "chat",
+      "input": 0.2,
+      "output": 0.8,
+      "cachedInput": 0.05,
+      "batchInput": 0.1,
+      "batchOutput": 0.4,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:gpt-4o-2024-08-06": {
+      "mode": "chat",
+      "input": 3.75,
+      "output": 15,
+      "cachedInput": 1.875,
+      "batchInput": 2.225,
+      "batchOutput": 12.5,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:gpt-4o-2024-11-20": {
+      "mode": "chat",
+      "input": 3.75,
+      "output": 15,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/ft:gpt-4o-mini-2024-07-18": {
+      "mode": "chat",
+      "input": 0.3,
+      "output": 1.2,
+      "cachedInput": 0.15,
+      "batchInput": 0.15,
+      "batchOutput": 0.6,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/ft:o4-mini-2025-04-16": {
+      "mode": "chat",
+      "input": 4,
+      "output": 16,
+      "cachedInput": 1,
+      "batchInput": 2,
+      "batchOutput": 8,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-3.5-turbo": {
+      "mode": "chat",
+      "input": 0.5,
+      "output": 1.5,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-3.5-turbo-0125": {
+      "mode": "chat",
+      "input": 0.5,
+      "output": 1.5,
+      "batchInput": 0.25,
+      "batchOutput": 0.75,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-3.5-turbo-1106": {
+      "mode": "chat",
+      "input": 1,
+      "output": 2,
+      "batchInput": 1,
+      "batchOutput": 2,
+      "deprecation": {
+        "shutdown": "2026-09-28",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-3.5-turbo-16k": {
+      "mode": "chat",
+      "input": 3,
+      "output": 4,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-6.1-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4": {
+      "mode": "chat",
+      "input": 30,
+      "output": 60,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4-0613": {
+      "mode": "chat",
+      "input": 30,
+      "output": 60,
+      "batchInput": 15,
+      "batchOutput": 30,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4-1106-preview": {
+      "mode": "chat",
+      "input": 10,
+      "output": 30,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4-turbo": {
+      "mode": "chat",
+      "input": 10,
+      "output": 30,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4-turbo-2024-04-09": {
+      "mode": "chat",
+      "input": 10,
+      "output": 30,
+      "batchInput": 5,
+      "batchOutput": 15,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "batchInput": 1,
+      "batchOutput": 4,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1-2025-04-14": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "batchInput": 1,
+      "batchOutput": 4,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1-mini": {
+      "mode": "chat",
+      "input": 0.4,
+      "output": 1.6,
+      "cachedInput": 0.1,
+      "batchInput": 0.2,
+      "batchOutput": 0.8,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1-mini-2025-04-14": {
+      "mode": "chat",
+      "input": 0.4,
+      "output": 1.6,
+      "cachedInput": 0.1,
+      "batchInput": 0.2,
+      "batchOutput": 0.8,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1-nano": {
+      "mode": "chat",
+      "input": 0.1,
+      "output": 0.4,
+      "cachedInput": 0.025,
+      "batchInput": 0.05,
+      "batchOutput": 0.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4.1-nano-2025-04-14": {
+      "mode": "chat",
+      "input": 0.1,
+      "output": 0.4,
+      "cachedInput": 0.025,
+      "batchInput": 0.05,
+      "batchOutput": 0.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "cachedInput": 1.25,
+      "batchInput": 1.25,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "mode": "chat",
+      "input": 5,
+      "output": 15,
+      "batchInput": 2.5,
+      "batchOutput": 7.5,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-2024-08-06": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "cachedInput": 1.25,
+      "batchInput": 1.25,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-2024-11-20": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "cachedInput": 1.25,
+      "batchInput": 1.25,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-audio-preview-2024-12-17": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4o-audio-preview-2025-06-03": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4o-mini": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6,
+      "cachedInput": 0.075,
+      "batchInput": 0.075,
+      "batchOutput": 0.3,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-mini-2024-07-18": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6,
+      "cachedInput": 0.075,
+      "batchInput": 0.075,
+      "batchOutput": 0.3,
+      "deprecation": {
+        "shutdown": "2027-01-14",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-4o-mini-audio-preview-2024-12-17": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-4o-mini-search-preview": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6,
+      "cachedInput": 0.075,
+      "batchInput": 0.075,
+      "batchOutput": 0.3
+    },
+    "openai/gpt-4o-mini-search-preview-2025-03-11": {
+      "mode": "chat",
+      "input": 0.15,
+      "output": 0.6,
+      "cachedInput": 0.075,
+      "batchInput": 0.075,
+      "batchOutput": 0.3,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-mini-search-preview"
+    },
+    "openai/gpt-4o-search-preview": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "cachedInput": 1.25,
+      "batchInput": 1.25,
+      "batchOutput": 5
+    },
+    "openai/gpt-4o-search-preview-2025-03-11": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "cachedInput": 1.25,
+      "batchInput": 1.25,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-4o-search-preview"
+    },
+    "openai/gpt-5": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "batchInput": 0.625,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-2025-08-07": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "batchInput": 0.625,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-chat": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.2-chat-latest",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      }
+    },
+    "openai/gpt-5-chat-latest": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-chat-latest"
+    },
+    "openai/gpt-5-codex": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5-codex"
+    },
+    "openai/gpt-5-mini": {
+      "mode": "chat",
+      "input": 0.25,
+      "output": 2,
+      "cachedInput": 0.025,
+      "batchInput": 0.125,
+      "batchOutput": 1,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-mini-2025-08-07": {
+      "mode": "chat",
+      "input": 0.25,
+      "output": 2,
+      "cachedInput": 0.025,
+      "batchInput": 0.125,
+      "batchOutput": 1,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-nano": {
+      "mode": "chat",
+      "input": 0.05,
+      "output": 0.4,
+      "cachedInput": 0.005,
+      "batchInput": 0.025,
+      "batchOutput": 0.2,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-nano-2025-08-07": {
+      "mode": "chat",
+      "input": 0.05,
+      "output": 0.4,
+      "cachedInput": 0.005,
+      "batchInput": 0.025,
+      "batchOutput": 0.2,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-pro": {
+      "mode": "chat",
+      "input": 15,
+      "output": 120,
+      "batchInput": 7.5,
+      "batchOutput": 60,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-pro-2025-10-06": {
+      "mode": "chat",
+      "input": 15,
+      "output": 120,
+      "batchInput": 7.5,
+      "batchOutput": 60,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-search-api": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5-search-api-2025-10-14": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.1": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "batchInput": 0.625,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2027-04-01",
+        "replacement": "openai/gpt-6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.1-2025-11-13": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "batchInput": 0.625,
+      "batchOutput": 5,
+      "deprecation": {
+        "shutdown": "2027-04-01",
+        "replacement": "openai/gpt-6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.1-chat-latest": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-chat-latest"
+    },
+    "openai/gpt-5.1-codex": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex"
+    },
+    "openai/gpt-5.1-codex-max": {
+      "mode": "chat",
+      "input": 1.25,
+      "output": 10,
+      "cachedInput": 0.125,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-max"
+    },
+    "openai/gpt-5.1-codex-mini": {
+      "mode": "chat",
+      "input": 0.25,
+      "output": 2,
+      "cachedInput": 0.025,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini"
+    },
+    "openai/gpt-5.2": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "batchInput": 0.875,
+      "batchOutput": 7,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.2-2025-12-11": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "batchInput": 0.875,
+      "batchOutput": 7,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.2-chat-latest": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "deprecation": {
+        "shutdown": "2026-08-10",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2-chat-latest"
+    },
+    "openai/gpt-5.2-codex": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.2-codex"
+    },
+    "openai/gpt-5.2-pro": {
+      "mode": "chat",
+      "input": 21,
+      "output": 168,
+      "batchInput": 10.5,
+      "batchOutput": 84,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.2-pro-2025-12-11": {
+      "mode": "chat",
+      "input": 21,
+      "output": 168,
+      "batchInput": 10.5,
+      "batchOutput": 84,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.3-chat-latest": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "deprecation": {
+        "shutdown": "2026-08-10",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-5.3-chat-latest"
+    },
+    "openai/gpt-5.3-codex": {
+      "mode": "chat",
+      "input": 1.75,
+      "output": 14,
+      "cachedInput": 0.175,
+      "deprecation": {
+        "shutdown": "2027-04-01",
+        "replacement": "openai/gpt-6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 15,
+      "cachedInput": 0.25,
+      "batchInput": 1.25,
+      "batchOutput": 7.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-2026-03-05": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 15,
+      "cachedInput": 0.25,
+      "batchInput": 1.25,
+      "batchOutput": 7.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-mini": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 4.5,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 2.25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-mini-2026-03-17": {
+      "mode": "chat",
+      "input": 0.75,
+      "output": 4.5,
+      "cachedInput": 0.075,
+      "batchInput": 0.375,
+      "batchOutput": 2.25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-nano": {
+      "mode": "chat",
+      "input": 0.2,
+      "output": 1.25,
+      "cachedInput": 0.02,
+      "batchInput": 0.1,
+      "batchOutput": 0.625,
+      "deprecation": {
+        "shutdown": "2027-04-01",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-nano-2026-03-17": {
+      "mode": "chat",
+      "input": 0.2,
+      "output": 1.25,
+      "cachedInput": 0.02,
+      "batchInput": 0.1,
+      "batchOutput": 0.625,
+      "deprecation": {
+        "shutdown": "2027-04-01",
+        "replacement": "openai/gpt-6-luna",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-pro": {
+      "mode": "chat",
+      "input": 30,
+      "output": 180,
+      "batchInput": 15,
+      "batchOutput": 90,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.4-pro-2026-03-05": {
+      "mode": "chat",
+      "input": 30,
+      "output": 180,
+      "batchInput": 15,
+      "batchOutput": 90,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5": {
+      "mode": "chat",
+      "input": 5,
+      "output": 30,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 15,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5-2026-04-23": {
+      "mode": "chat",
+      "input": 5,
+      "output": 30,
+      "cachedInput": 0.5,
+      "batchInput": 2.5,
+      "batchOutput": 15,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5-cyber": {
+      "mode": "chat",
+      "input": 12.5,
+      "output": 75,
+      "cachedInput": 1.25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5-cyber-preview": {
+      "mode": "chat",
+      "input": 12.5,
+      "output": 75,
+      "cachedInput": 1.25,
+      "deprecation": {
+        "shutdown": "2027-02-01",
+        "replacement": "openai/gpt-6-cyber",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5-pro": {
+      "mode": "chat",
+      "input": 30,
+      "output": 180,
+      "batchInput": 15,
+      "batchOutput": 90,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.5-pro-2026-04-23": {
+      "mode": "chat",
+      "input": 30,
+      "output": 180,
+      "batchInput": 15,
+      "batchOutput": 90,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.6": {
+      "mode": "chat",
+      "input": 4,
+      "output": 20,
+      "cachedInput": 0.4,
+      "batchInput": 2,
+      "batchOutput": 10
+    },
+    "openai/gpt-5.6-cyber": {
+      "mode": "chat",
+      "input": 12.5,
+      "output": 75,
+      "cachedInput": 1.25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.6-luna": {
+      "mode": "chat",
+      "input": 0.2,
+      "output": 1.2,
+      "cachedInput": 0.02,
+      "batchInput": 0.1,
+      "batchOutput": 0.6,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.6-sol": {
+      "mode": "chat",
+      "input": 4,
+      "output": 20,
+      "cachedInput": 0.4,
+      "batchInput": 2,
+      "batchOutput": 10,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-5.6-terra": {
+      "mode": "chat",
+      "input": 2,
+      "output": 12,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 6,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-astra": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "batchInput": 5,
+      "batchOutput": 25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-astra-law": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-cyber": {
+      "mode": "chat",
+      "input": 20,
+      "output": 100,
+      "cachedInput": 2,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-luna": {
+      "mode": "chat",
+      "input": 0.1,
+      "output": 0.5,
+      "cachedInput": 0.01,
+      "batchInput": 0.05,
+      "batchOutput": 0.25,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-rosalind": {
+      "mode": "chat",
+      "input": 10,
+      "output": 50,
+      "cachedInput": 1,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6-sol": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.2,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6.1-sol": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.1,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6.1-terra": {
+      "mode": "chat",
+      "input": 1,
+      "output": 5,
+      "cachedInput": 0.05,
+      "batchInput": 0.5,
+      "batchOutput": 2.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6.2-astra": {
+      "mode": "chat",
+      "input": 8,
+      "output": 40,
+      "cachedInput": 0.4,
+      "batchInput": 4,
+      "batchOutput": 20,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6.2-astra-law": {
+      "mode": "chat",
+      "input": 8,
+      "output": 40,
+      "cachedInput": 0.4,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-6.2-sol": {
+      "mode": "chat",
+      "input": 2,
+      "output": 10,
+      "cachedInput": 0.1,
+      "batchInput": 1,
+      "batchOutput": 5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-audio": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-audio-1.5": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-audio-2025-08-28": {
+      "mode": "chat",
+      "input": 2.5,
+      "output": 10,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-audio-mini": {
+      "mode": "chat",
+      "input": 0.6,
+      "output": 2.4,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-audio-mini-2025-10-06": {
+      "mode": "chat",
+      "input": 0.6,
+      "output": 2.4,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/gpt-audio-mini"
+    },
+    "openai/gpt-audio-mini-2025-12-15": {
+      "mode": "chat",
+      "input": 0.6,
+      "output": 2.4,
+      "deprecation": {
+        "shutdown": "2027-01-20",
+        "replacement": "openai/gpt-audio-1.5",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-daybreak-blue-latest": {
+      "mode": "chat",
+      "input": 4,
+      "output": 20,
+      "cachedInput": 0.4,
+      "source": "https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest"
+    },
+    "openai/gpt-daybreak-red-latest": {
+      "mode": "chat",
+      "input": 12.5,
+      "output": 75,
+      "cachedInput": 1.25,
+      "source": "https://developers.openai.com/api/docs/models/gpt-daybreak-red-latest"
+    },
+    "openai/gpt-rosalind-discovery": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/gpt-rosalind-research": {
+      "mode": "chat",
+      "input": 5,
+      "output": 25,
+      "cachedInput": 0.5,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o1": {
+      "mode": "chat",
+      "input": 15,
+      "output": 60,
+      "cachedInput": 7.5,
+      "batchInput": 7.5,
+      "batchOutput": 30,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o1-2024-12-17": {
+      "mode": "chat",
+      "input": 15,
+      "output": 60,
+      "cachedInput": 7.5,
+      "batchInput": 7.5,
+      "batchOutput": 30,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o1-pro": {
+      "mode": "chat",
+      "input": 150,
+      "output": 600,
+      "batchInput": 75,
+      "batchOutput": 300,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o1-pro-2025-03-19": {
+      "mode": "chat",
+      "input": 150,
+      "output": 600,
+      "batchInput": 75,
+      "batchOutput": 300,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "batchInput": 1,
+      "batchOutput": 4,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3-2025-04-16": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "batchInput": 1,
+      "batchOutput": 4,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3-deep-research": {
+      "mode": "chat",
+      "input": 10,
+      "output": 40,
+      "cachedInput": 2.5,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/o3-deep-research"
+    },
+    "openai/o3-deep-research-2025-06-26": {
+      "mode": "chat",
+      "input": 10,
+      "output": 40,
+      "cachedInput": 2.5,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/o3-deep-research"
+    },
+    "openai/o3-mini": {
+      "mode": "chat",
+      "input": 1.1,
+      "output": 4.4,
+      "cachedInput": 0.55,
+      "batchInput": 0.55,
+      "batchOutput": 2.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3-mini-2025-01-31": {
+      "mode": "chat",
+      "input": 1.1,
+      "output": 4.4,
+      "cachedInput": 0.55,
+      "batchInput": 0.55,
+      "batchOutput": 2.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3-pro": {
+      "mode": "chat",
+      "input": 20,
+      "output": 80,
+      "batchInput": 10,
+      "batchOutput": 40,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o3-pro-2025-06-10": {
+      "mode": "chat",
+      "input": 20,
+      "output": 80,
+      "batchInput": 10,
+      "batchOutput": 40,
+      "deprecation": {
+        "shutdown": "2026-12-11",
+        "replacement": "openai/gpt-6.1-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o4-mini": {
+      "mode": "chat",
+      "input": 1.1,
+      "output": 4.4,
+      "cachedInput": 0.275,
+      "batchInput": 0.55,
+      "batchOutput": 2.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o4-mini-2025-04-16": {
+      "mode": "chat",
+      "input": 1.1,
+      "output": 4.4,
+      "cachedInput": 0.275,
+      "batchInput": 0.55,
+      "batchOutput": 2.2,
+      "deprecation": {
+        "shutdown": "2026-10-23",
+        "replacement": "openai/gpt-5.6-terra",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/o4-mini-deep-research": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/o4-mini-deep-research"
+    },
+    "openai/o4-mini-deep-research-2025-06-26": {
+      "mode": "chat",
+      "input": 2,
+      "output": 8,
+      "cachedInput": 0.5,
+      "deprecation": {
+        "shutdown": "2026-07-23",
+        "replacement": "openai/gpt-5.6-sol",
+        "source": "https://developers.openai.com/api/docs/deprecations"
+      },
+      "source": "https://developers.openai.com/api/docs/models/o4-mini-deep-research"
+    },
+    "openai/text-embedding-3-large": {
+      "mode": "embedding",
+      "input": 0.13,
+      "output": 0,
+      "batchInput": 0.065,
+      "batchOutput": 0,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/text-embedding-3-small": {
+      "mode": "embedding",
+      "input": 0.02,
+      "output": 0,
+      "batchInput": 0.01,
+      "batchOutput": 0,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/text-embedding-ada-002": {
+      "mode": "embedding",
+      "input": 0.1,
+      "output": 0,
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai/text-embedding-ada-002-v2": {
+      "mode": "embedding",
+      "input": 0.1,
+      "output": 0,
+      "batchInput": 0.05,
+      "batchOutput": 0
+    }
+  }
+}

@@ -1,17 +1,16 @@
 export { LLMProvider, supportsFiles, supportsBatch, textOnlyCapabilities } from './LLMProvider.js';
 export type { FileCapableProvider, BatchCapableProvider } from './LLMProvider.js';
 export { ClaudeProvider } from './ClaudeProvider.js';
-export type { ClaudeProviderConfig, ClaudeModelPricing } from './ClaudeProvider.js';
+export type { ClaudeProviderConfig } from './ClaudeProvider.js';
 export { OpenAIProvider } from './OpenAIProvider.js';
-export type { OpenAIProviderConfig, OpenAIModelPricing } from './OpenAIProvider.js';
+export type { OpenAIProviderConfig } from './OpenAIProvider.js';
 export { OllamaProvider } from './OllamaProvider.js';
 export type { OllamaClientConfig } from './OllamaProvider.js';
 export { LLMRouter } from './LLMRouter.js';
 export type { CircuitBreakerConfig, CircuitSnapshot } from './LLMRouter.js';
 export { GeminiProvider } from './gemini/GeminiProvider.js';
 export type { GeminiProviderConfig, GeminiClient } from './gemini/GeminiProvider.js';
-export { DEFAULT_GEMINI_PRICING, KNOWN_GEMINI_MODELS } from './gemini/models.js';
-export type { GeminiModelPricing } from './gemini/models.js';
+export { KNOWN_GEMINI_MODELS } from './gemini/models.js';
 export { ContentResolver } from './ContentResolver.js';
 export type {
   ResolvedContent,

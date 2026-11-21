@@ -11,7 +11,8 @@ import type {
 } from '../types/index.js';
 import type { StorageAdapter } from '../memory/adapters/StorageAdapter.js';
 import { InMemoryAdapter } from '../memory/adapters/InMemoryAdapter.js';
-import { PricingTable } from './PricingTable.js';
+import { PricingCatalog } from './PricingCatalog.js';
+import type { CostEstimator, CostQuery } from './PricingCatalog.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -62,12 +63,51 @@ const DEFAULT_LIMITS: TokenLimits = {
  */
 export type UsageData = LLMResponse['usage'] & {
   provider?: string;
+  /** Adapter type of the provider instance, when known (helps pricing). */
+  providerType?: string;
   model?: string;
+  /** Part of `inputTokens` served from the prompt cache (priced at the cached rate). */
+  cachedInputTokens?: number;
+  /** `batch` applies batch rates. */
+  executionMode?: LLMResponse['executionMode'];
   /** Skill that originated the call, when attributable. */
   skillId?: string;
   /** Tool that originated the call, when attributable (e.g. 'rag.search'). */
   toolName?: string;
 };
+
+/**
+ * The cost query of a provider response: instance, adapter type, model,
+ * cached tokens and execution mode — everything the catalog prices on.
+ */
+export function costQueryFor(response: LLMResponse): CostQuery {
+  const cached = response.performance?.cachedInputTokens;
+  // Anthropic reports cache reads apart from `input_tokens`; OpenAI and Gemini
+  // count them inside. The catalog expects the latter, so add them back.
+  const separateCache = response.providerType === 'claude' && cached !== undefined;
+  return {
+    provider: response.provider,
+    ...(response.providerType !== undefined && { providerType: response.providerType }),
+    model: response.model,
+    inputTokens: response.usage.inputTokens + (separateCache ? cached : 0),
+    outputTokens: response.usage.outputTokens,
+    ...(cached !== undefined && { cachedInputTokens: cached }),
+    ...(response.executionMode !== undefined && { executionMode: response.executionMode }),
+  };
+}
+
+/** The usage record data of a provider response (see {@link TokenTracker.record}). */
+export function usageFor(response: LLMResponse): UsageData {
+  const cached = response.performance?.cachedInputTokens;
+  return {
+    ...response.usage,
+    provider: response.provider,
+    ...(response.providerType !== undefined && { providerType: response.providerType }),
+    model: response.model,
+    ...(cached !== undefined && { cachedInputTokens: cached }),
+    ...(response.executionMode !== undefined && { executionMode: response.executionMode }),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
@@ -251,11 +291,13 @@ function buildSummary(records: TokenUsageRecord[]): TokenUsageSummary {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCostUsd = 0;
+  let unpricedTokens = 0;
 
   for (const r of records) {
     totalInputTokens += r.inputTokens;
     totalOutputTokens += r.outputTokens;
     totalCostUsd += r.estimatedCostUsd;
+    if (r.unpriced === true) unpricedTokens += r.inputTokens + r.outputTokens;
 
     const modelTotal = r.inputTokens + r.outputTokens;
     accumulate(byModel, r.model, modelTotal, r.estimatedCostUsd);
@@ -270,6 +312,7 @@ function buildSummary(records: TokenUsageRecord[]): TokenUsageSummary {
     totalInputTokens,
     totalOutputTokens,
     totalCostUsd,
+    unpricedTokens,
     byModel,
     byProvider,
     byAgent,
@@ -312,7 +355,9 @@ function buildSummary(records: TokenUsageRecord[]): TokenUsageSummary {
 export class TokenTracker {
   readonly #store: StorageAdapter;
   readonly #limits: TokenLimits;
-  readonly #pricing: PricingTable;
+  readonly #pricing: CostEstimator;
+  readonly #onUnpriced: ((provider: string, model: string) => void) | undefined;
+  readonly #reportedUnpriced = new Set<string>();
   readonly #limitMode: TokenLimitMode;
   readonly #tracking: boolean;
 
@@ -320,19 +365,23 @@ export class TokenTracker {
    * @param store   - Storage backend.
    * @param limits  - Override token limits. Defaults to production values:
    *                  1M tokens/day per tenant, 50K tokens/day per user.
-   * @param pricing - Price list used to estimate cost when the LLM provider does
-   *                  not report one. Defaults to an empty table (cost 0).
+   * @param pricing - Prices used when the LLM provider does not report a cost:
+   *                  any {@link CostEstimator}. Defaults to the
+   *                  {@link PricingCatalog} shipped with the SDK.
    * @param limitMode - Quota policy (`enforce`, `observe`, `disabled`). Governs
    *                  quota checks only, never recording.
    * @param options.tracking - Record usage. Default `true`; `false` stores no
    *                  usage records.
+   * @param options.onUnpriced - Called once per provider/model recorded
+   *                  without a known price (its cost is stored as 0 and the
+   *                  record is flagged `unpriced`).
    */
   constructor(
     store: StorageAdapter = new InMemoryAdapter(),
     limits: Partial<TokenLimits> = {},
-    pricing: PricingTable = new PricingTable(),
+    pricing: CostEstimator = new PricingCatalog(),
     limitMode: TokenLimitMode = 'enforce',
-    options: { tracking?: boolean } = {},
+    options: { tracking?: boolean; onUnpriced?: (provider: string, model: string) => void } = {},
   ) {
     this.#store = store;
     this.#limits = {
@@ -342,19 +391,40 @@ export class TokenTracker {
     this.#pricing = pricing;
     this.#limitMode = limitMode;
     this.#tracking = options.tracking ?? true;
+    this.#onUnpriced = options.onUnpriced;
   }
 
   /**
-   * Estimates the USD cost of a call from the configured price list.
-   * Returns `0` for models without a configured price.
+   * Estimates the USD cost of a call from the configured prices.
+   *
+   * With a {@link CostQuery} it returns `undefined` when the model has no
+   * known price. The positional form (model, input, output) is kept for
+   * compatibility and returns `0` in that case.
    */
-  estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-    return this.#pricing.cost(model, inputTokens, outputTokens);
+  estimateCost(query: CostQuery): number | undefined;
+  estimateCost(model: string, inputTokens: number, outputTokens: number): number;
+  estimateCost(
+    queryOrModel: CostQuery | string,
+    inputTokens = 0,
+    outputTokens = 0,
+  ): number | undefined {
+    if (typeof queryOrModel === 'string') {
+      return this.#pricing.estimate({ model: queryOrModel, inputTokens, outputTokens }) ?? 0;
+    }
+    return this.#pricing.estimate(queryOrModel);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Public API
   // ─────────────────────────────────────────────────────────────────────────
+
+  /** Notifies `onUnpriced` once per provider/model. */
+  #reportUnpriced(provider: string, model: string): void {
+    const key = `${provider}/${model}`;
+    if (this.#onUnpriced === undefined || this.#reportedUnpriced.has(key)) return;
+    this.#reportedUnpriced.add(key);
+    this.#onUnpriced(provider, model);
+  }
 
   /**
    * Records a single LLM call's token consumption.
@@ -380,6 +450,22 @@ export class TokenTracker {
     // disabled, usage and cost reports must keep working.
     if (!this.#tracking) return;
     const model = usage.model ?? 'unknown';
+    const provider = usage.provider ?? 'unknown';
+    // Prefer the provider-reported cost; otherwise price it from the catalog.
+    const cost =
+      usage.cost ??
+      this.#pricing.estimate({
+        provider,
+        ...(usage.providerType !== undefined && { providerType: usage.providerType }),
+        model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        ...(usage.cachedInputTokens !== undefined && {
+          cachedInputTokens: usage.cachedInputTokens,
+        }),
+        ...(usage.executionMode !== undefined && { executionMode: usage.executionMode }),
+      });
+    if (cost === undefined) this.#reportUnpriced(provider, model);
     const record: TokenUsageRecord = {
       recordId: randomUUID(),
       tenantId: context.tenantId,
@@ -387,15 +473,14 @@ export class TokenTracker {
       agentId: context.agentId,
       sessionId: context.sessionId,
       requestId: context.requestId,
-      provider: usage.provider ?? 'unknown',
+      provider,
       model,
       ...(usage.skillId !== undefined && { skillId: usage.skillId }),
       ...(usage.toolName !== undefined && { toolName: usage.toolName }),
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
-      // Prefer the provider-reported cost; fall back to the configured price list.
-      estimatedCostUsd:
-        usage.cost ?? this.#pricing.cost(model, usage.inputTokens, usage.outputTokens),
+      estimatedCostUsd: cost ?? 0,
+      ...(cost === undefined && { unpriced: true }),
       timestamp: new Date(),
     };
 
@@ -602,6 +687,11 @@ export class TokenTracker {
 
   get limitMode(): TokenLimitMode {
     return this.#limitMode;
+  }
+
+  /** The prices used for calls that report no cost. */
+  get pricing(): CostEstimator {
+    return this.#pricing;
   }
 
   /** Whether usage records are stored (`tokens.tracking`). */

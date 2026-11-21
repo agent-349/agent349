@@ -39,6 +39,11 @@ export default defineConfig({
       join('dist', 'defaults.json'),
     );
     console.log('Copied src/config/defaults.json → dist/defaults.json');
+    // Pricing data is read at runtime from next to the bundle (PricingCatalog).
+    for (const file of ['pricing-catalog.json', 'pricing-overrides.json']) {
+      copyFileSync(join('src', 'tokens', file), join('dist', file));
+    }
+    console.log('Copied src/tokens/pricing-*.json → dist/');
     return Promise.resolve();
   },
 });

@@ -34,21 +34,6 @@ import { ProviderError, UnsupportedCapabilityError } from '../errors/index.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Pricing rates per 1 000 tokens in USD.
- * `input` is the rate for prompt tokens; `output` for completion tokens.
- */
-export interface ClaudeModelPricing {
-  /** USD per 1 000 input (prompt) tokens. */
-  input: number;
-  /** USD per 1 000 output (completion) tokens. */
-  output: number;
-  /** USD per 1 000 input tokens when the request ran in a batch job. */
-  batchInput?: number;
-  /** USD per 1 000 output tokens when the request ran in a batch job. */
-  batchOutput?: number;
-}
-
-/**
  * Configuration accepted by {@link ClaudeProvider}.
  */
 export interface ClaudeProviderConfig {
@@ -71,48 +56,11 @@ export interface ClaudeProviderConfig {
   maxRetries?: number;
   /** Request timeout in milliseconds. Default: 30 000. */
   timeoutMs?: number;
-  /**
-   * Per-model pricing table (USD / 1 000 tokens), merged on top of
-   * {@link DEFAULT_PRICING} — entries here override the built-in default for
-   * the same key, and any model not listed here still falls back to the
-   * built-in table. Keys are model identifiers or prefixes (e.g.
-   * `'claude-opus-5'`). Use this to add or correct a rate (e.g. a
-   * new model release) via `config.llm.providers.claude.pricing` without
-   * needing an SDK update.
-   */
-  pricing?: Record<string, ClaudeModelPricing>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Built-in Claude pricing (USD / 1 000 tokens), from Anthropic's published
- * rates as of September 2026; batch rates are 50 %. Keys match by longest
- * prefix, so an alias such as `claude-haiku-4-5` also prices its dated
- * snapshot. Rates change: override them with `pricing` instead of waiting
- * for an SDK release.
- */
-const DEFAULT_PRICING: Record<string, ClaudeModelPricing> = {
-  'claude-fable-5-1': { input: 0.01, output: 0.05, batchInput: 0.005, batchOutput: 0.025 },
-  'claude-opus-5': { input: 0.005, output: 0.025, batchInput: 0.0025, batchOutput: 0.0125 },
-  'claude-sonnet-5': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
-  'claude-haiku-4-5': { input: 0.001, output: 0.005, batchInput: 0.0005, batchOutput: 0.0025 },
-  // Previous generation (deprecated), kept so existing deployments stay priced.
-  'claude-sonnet-4-20250514': {
-    input: 0.003,
-    output: 0.015,
-    batchInput: 0.0015,
-    batchOutput: 0.0075,
-  },
-  'claude-opus-4-20250514': {
-    input: 0.015,
-    output: 0.075,
-    batchInput: 0.0075,
-    batchOutput: 0.0375,
-  },
-};
 
 /**
  * Anthropic's documented per-request payload ceiling. Content above this must
@@ -167,7 +115,7 @@ interface ClaudeStreamResult {
  * - **Responses**: Claude `content[]` → SDK `content` text + `toolCalls` array
  *   + `contentBlocks` (preserved for round-trip accuracy in multi-turn loops).
  * - **Stop reason**: `end_turn` → `'end'`; other values mapped directly.
- * - **Cost**: estimated from the configurable pricing table.
+ * - **Cost**: not computed here; the Orchestrator prices calls from the SDK pricing catalog.
  *
  * @example
  * ```typescript
@@ -183,10 +131,9 @@ export class ClaudeProvider
   override readonly providerType = 'claude';
 
   readonly #client: Anthropic;
-  readonly #pricing: Record<string, ClaudeModelPricing>;
 
   /**
-   * @param config - Provider configuration (API key, retries, timeout, pricing).
+   * @param config - Provider configuration (API key, retries, timeout).
    * @param client - Optional pre-constructed Anthropic client. Primarily used
    *                 for testing (dependency injection) — omit in production.
    */
@@ -203,7 +150,6 @@ export class ClaudeProvider
       });
     // Merge (not replace): an override for one model shouldn't require
     // re-listing every other model that already has a correct built-in price.
-    this.#pricing = { ...DEFAULT_PRICING, ...config.pricing };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -737,10 +683,9 @@ export class ClaudeProvider
       };
     });
 
-    // ── Usage & cost ────────────────────────────────────────────────────────
+    // ── Usage ────────────────────────────────────────────────────────
     const inputTokens = raw.usage.input_tokens;
     const outputTokens = raw.usage.output_tokens;
-    const cost = this.#estimateCost(raw.model, inputTokens, outputTokens, executionMode);
 
     // Prompt tokens served from Anthropic's prompt cache. Mapped to the common
     // `performance.cachedInputTokens` (equivalent to OpenAI's cached-tokens).
@@ -787,7 +732,6 @@ export class ClaudeProvider
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
-        ...(cost !== undefined && { cost }),
       },
       model: raw.model,
       provider: this.name,
@@ -1055,54 +999,6 @@ export class ClaudeProvider
       default:
         return 'end';
     }
-  }
-
-  /**
-   * Estimates the cost for a call in USD.
-   *
-   * Tries an exact model key match first, then the **longest** matching
-   * prefix for versioned identifiers (e.g. `'claude-sonnet-4-20250514-preview'`
-   * → matches `'claude-sonnet-4-20250514'`). Longest-prefix, not first-match,
-   * matters once two configured keys can prefix each other (e.g. a custom
-   * `'claude-haiku-4'` alongside `'claude-haiku-4-5-20251001'`) — otherwise a
-   * more specific model could silently price at a less specific key's rate
-   * depending on object key iteration order.
-   */
-  #estimateCost(
-    model: string,
-    inputTokens: number,
-    outputTokens: number,
-    executionMode: ExecutionMode = 'sync',
-  ): number | undefined {
-    const pricing =
-      this.#pricing[model] ?? ClaudeProvider.#longestPrefixMatch(this.#pricing, model);
-
-    if (pricing === undefined) return undefined;
-
-    // Batch rates are per model, not a blanket multiplier: a model without
-    // declared batch rates simply bills at its synchronous ones.
-    const inputRate =
-      executionMode === 'batch' ? (pricing.batchInput ?? pricing.input) : pricing.input;
-    const outputRate =
-      executionMode === 'batch' ? (pricing.batchOutput ?? pricing.output) : pricing.output;
-
-    return (inputTokens * inputRate + outputTokens * outputRate) / 1_000;
-  }
-
-  /** Finds the pricing entry whose key is the longest matching prefix of `model`. */
-  static #longestPrefixMatch(
-    pricing: Record<string, ClaudeModelPricing>,
-    model: string,
-  ): ClaudeModelPricing | undefined {
-    let bestKey: string | undefined;
-    let bestValue: ClaudeModelPricing | undefined;
-    for (const [key, value] of Object.entries(pricing)) {
-      if (model.startsWith(key) && (bestKey === undefined || key.length > bestKey.length)) {
-        bestKey = key;
-        bestValue = value;
-      }
-    }
-    return bestValue;
   }
 
   /**

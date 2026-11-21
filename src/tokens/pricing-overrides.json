@@ -1,0 +1,4 @@
+{
+  "comment": "Manual corrections merged over pricing-catalog.json at runtime. Never written by scripts/update-pricing.mjs, so a regeneration cannot undo them. Keys are provider/model; prices are USD per 1M tokens. Give every entry a source and a verifiedAt date. Per-installation prices (negotiated rates, Azure) belong in llm.pricing in the SDK config, not here.",
+  "models": {}
+}

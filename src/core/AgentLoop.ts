@@ -21,7 +21,12 @@ import { SkillRegistry } from '../skills/SkillRegistry.js';
 import { ToolExecutor } from '../tools/ToolExecutor.js';
 import { UntrustedTracker } from '../security/UntrustedTracker.js';
 import { ToolRegistry } from '../tools/ToolRegistry.js';
-import { TokenTracker, estimateLLMRequestTokens } from '../tokens/TokenTracker.js';
+import {
+  TokenTracker,
+  costQueryFor,
+  estimateLLMRequestTokens,
+  usageFor,
+} from '../tokens/TokenTracker.js';
 import { LLMProvider } from '../llm/LLMProvider.js';
 import { ContentResolver } from '../llm/ContentResolver.js';
 import { applyMediaPersistence } from '../memory/mediaPersistence.js';
@@ -445,17 +450,10 @@ export class AgentLoop {
       // the provider didn't report one, so AgentResponse.usage and the stored
       // records share a single, consistent cost.
       if (response.usage.cost === undefined) {
-        response.usage.cost = this.#tokens.estimateCost(
-          response.model,
-          response.usage.inputTokens,
-          response.usage.outputTokens,
-        );
+        const cost = this.#tokens.estimateCost(costQueryFor(response));
+        if (cost !== undefined) response.usage.cost = cost;
       }
-      await this.#tokens.record(context, {
-        ...response.usage,
-        provider: response.provider,
-        model: response.model,
-      });
+      await this.#tokens.record(context, usageFor(response));
       usageByIteration.push(response.usage);
       if (response.uploadedFiles !== undefined) uploadedFiles.push(...response.uploadedFiles);
 

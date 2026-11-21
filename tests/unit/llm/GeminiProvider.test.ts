@@ -427,18 +427,6 @@ describe('response normalisation', () => {
     ]);
   });
 
-  it('estimates cost from the pricing table', async () => {
-    const { client } = makeClient();
-    const provider = new GeminiProvider(
-      { apiKey: 'k', pricing: { 'gemini-flash-latest': { input: 0.001, output: 0.002 } } },
-      client,
-    );
-
-    const response = await provider.call(makeRequest());
-    // 100 input * 0.001/1k + 50 output * 0.002/1k
-    expect(response.usage.cost).toBeCloseTo(0.0002, 6);
-  });
-
   it('maps a tool call and preserves its correlation id', async () => {
     const { provider } = makeProvider(
       makeInteraction({
