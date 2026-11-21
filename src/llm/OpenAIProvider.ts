@@ -136,6 +136,16 @@ const DEFAULT_PRICING: Record<string, OpenAIModelPricing> = {
   'gpt-6-astra': { input: 0.01, output: 0.05, batchInput: 0.005, batchOutput: 0.025 },
   'gpt-6-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
   'gpt-6-luna': { input: 0.0001, output: 0.0005, batchInput: 0.00005, batchOutput: 0.00025 },
+  // gpt-6.1 / gpt-6.2 and gpt-5.6, standard rates from OpenAI's pricing page
+  // (November 2026). Listed explicitly: 'gpt-6-sol' is not a prefix of
+  // 'gpt-6.1-sol', so without them these models reported no cost at all.
+  'gpt-6.1-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
+  'gpt-6.1-terra': { input: 0.001, output: 0.005, batchInput: 0.0005, batchOutput: 0.0025 },
+  'gpt-6.2-sol': { input: 0.002, output: 0.01, batchInput: 0.001, batchOutput: 0.005 },
+  'gpt-6.2-astra': { input: 0.008, output: 0.04, batchInput: 0.004, batchOutput: 0.02 },
+  'gpt-5.6-sol': { input: 0.004, output: 0.02, batchInput: 0.002, batchOutput: 0.01 },
+  'gpt-5.6-terra': { input: 0.002, output: 0.012, batchInput: 0.001, batchOutput: 0.006 },
+  'gpt-5.6-luna': { input: 0.0002, output: 0.0012, batchInput: 0.0001, batchOutput: 0.0006 },
   // Earlier models, kept so existing deployments stay priced.
   'gpt-5': { input: 0.00125, output: 0.01, batchInput: 0.000625, batchOutput: 0.005 },
   'gpt-5-mini': { input: 0.00025, output: 0.002, batchInput: 0.000125, batchOutput: 0.001 },
@@ -154,6 +164,13 @@ const KNOWN_MODELS = [
   'gpt-6-astra',
   'gpt-6-sol',
   'gpt-6-luna',
+  'gpt-6.1-sol',
+  'gpt-6.1-terra',
+  'gpt-6.2-sol',
+  'gpt-6.2-astra',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',

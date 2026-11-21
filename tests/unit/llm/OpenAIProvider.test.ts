@@ -669,6 +669,18 @@ describe('usage and cost', () => {
     expect(res.usage.cost).toBeCloseTo(0.02);
   });
 
+  it('prices gpt-6.1 models, which do not share a prefix with gpt-6-*', async () => {
+    mockCreate.mockResolvedValue(
+      makeOpenAIResponse({
+        model: 'gpt-6.1-sol-2026-06-11',
+        usage: { prompt_tokens: 1000, completion_tokens: 1000, total_tokens: 2000 },
+      }),
+    );
+    const res = await provider.call({ ...BASE_REQUEST, model: 'gpt-6.1-sol' });
+    // (1000 * 0.002 + 1000 * 0.01) / 1000 = 0.012 — dated snapshot priced by prefix.
+    expect(res.usage.cost).toBeCloseTo(0.012);
+  });
+
   it('calculates cost for gpt-4o-mini', async () => {
     mockCreate.mockResolvedValue(
       makeOpenAIResponse({

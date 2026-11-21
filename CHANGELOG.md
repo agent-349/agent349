@@ -112,6 +112,12 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
 
 ### Fixed
 
+- **OpenAI: gpt-6.1, gpt-6.2 and gpt-5.6 models are priced.** They were
+  missing from the built-in table and no entry is a prefix of them
+  (`gpt-6-sol` does not match `gpt-6.1-sol`), so calls reported no cost.
+  These are the replacements OpenAI names for gpt-5, gpt-5-mini and gpt-5-nano
+  (retired on 2026-12-11).
+
 - **OpenAI: a rejected `reasoningEffort` value is substituted, not dropped.**
   Model generations disagree on the scale (gpt-5 accepts `minimal` but not
   `none`; later families the reverse). The provider used to retry without the
