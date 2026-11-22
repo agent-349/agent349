@@ -47,7 +47,9 @@ describe('ReferenceExtractor', () => {
     expect(x.identify('Reglamento Interno 2025.pdf')).toEqual([]);
     expect(x.identify('30 - ANEXO - Formularios.pdf')).toEqual([]);
     expect(
-      new ReferenceExtractor({ profile: new LegalProfile({ numberedTitles: true }) }).identify('30 - ANEXO - Formularios.pdf'),
+      new ReferenceExtractor({ profile: new LegalProfile({ numberedTitles: true }) }).identify(
+        '30 - ANEXO - Formularios.pdf',
+      ),
     ).toEqual(['annex:30']);
     expect(x.identify('Reglamento.pdf', 'ANEXO XXX - Formularios ...')).toEqual(['annex:30']);
   });

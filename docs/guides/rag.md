@@ -243,7 +243,7 @@ References are normalised to keys — `annex:14`, `law:12345`,
 `decree:120/2015`, `regulation:679/2016`, `usc:12-1831` — so "Anexo XIV",
 "anexo 14" and "Anexo N° 14" match, and so do "Decreto 120/15", "Decreto N°
 120/015" and "Decreto 120/2015". Which words name which kind of norm comes
-from the legal language profile (see *Legal languages* below).
+from the legal language profile (see _Legal languages_ below).
 
 The SDK has no registry of your documents, so the host maps keys to
 documentIds with `RAGQuery.resolveReferences` (or `createRAGTool(..., {
@@ -338,14 +338,14 @@ References, relations and structure read the text through a legal language
 profile, `rag.legal`. Built-in packs follow the drafting conventions of each
 language and its main traditions:
 
-| Pack | Traditions | Examples |
-|---|---|---|
-| `es` | Spain, Latin America | "Artículo 5°", "Real Decreto 1720/2007", "Derógase…", "(Redacción dada por…)" |
-| `pt` | Brazil, Portugal | "Art. 5º", "§ 1º" and "Parágrafo único" (paragraphs), "Fica revogada a Lei nº…", "(Redação dada pela Lei…)" |
+| Pack | Traditions                | Examples                                                                                                                               |
+| ---- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `es` | Spain, Latin America      | "Artículo 5°", "Real Decreto 1720/2007", "Derógase…", "(Redacción dada por…)"                                                          |
+| `pt` | Brazil, Portugal          | "Art. 5º", "§ 1º" and "Parágrafo único" (paragraphs), "Fica revogada a Lei nº…", "(Redação dada pela Lei…)"                            |
 | `en` | US, UK, EU, international | "SEC. 101", "Section 5", "§ 1026.5", "12 U.S.C. 248", "Pub. L. 111-203", "S.I. 2017/692", "Directive 2006/48/EC", "is hereby repealed" |
-| `fr` | France, Belgium | "Article premier", "Art. 1er", "loi n° 78-17" (year-number), "est abrogé" |
-| `it` | Italy | "Art. 2-bis", "decreto legislativo 30 giugno 2003, n. 196", "è abrogato" |
-| `de` | Germany, Austria | "§ 5", "Artikel 4", "(weggefallen)", "wird aufgehoben", "tritt außer Kraft" |
+| `fr` | France, Belgium           | "Article premier", "Art. 1er", "loi n° 78-17" (year-number), "est abrogé"                                                              |
+| `it` | Italy                     | "Art. 2-bis", "decreto legislativo 30 giugno 2003, n. 196", "è abrogato"                                                               |
+| `de` | Germany, Austria          | "§ 5", "Artikel 4", "(weggefallen)", "wird aufgehoben", "tritt außer Kraft"                                                            |
 
 All packs are active by default: a collection that mixes local rules with EU
 directives needs no setting. The `fr`, `it` and `de` packs follow the usual
@@ -386,7 +386,7 @@ A 7000" → `a-7000`) and bis/ter are kept. A year that belongs to a title
 `version` and `priority` (`high` / `normal` / `low`) — from
 `RAGQuery.describeDocuments` or from `metadata.custom` of the chunks. An
 expired document, or one repealed in full by a confirmed relation, is
-*inactive*: flagged by default, left out with `inactive: 'exclude'` (a
+_inactive_: flagged by default, left out with `inactive: 'exclude'` (a
 proposed relation only warns, it never excludes; the replacing document is
 still searched). Priority adds or subtracts `priorityWeight` to the score
 before the final cut. Read at query time, so changing a date needs no
@@ -462,15 +462,24 @@ it does not cover. `rag.verification` adds a check after the synthesis:
 ```
 
 ```typescript
-const result = await orch.rag.pipeline.verifyAnswer(
-  { question, answer, passages },   // the passages given to the synthesis
-  context,
-);
+import { decideVerification, verificationNotice, type Passage } from 'agent349';
+
+declare const question: string;
+declare let answer: string; // the synthesis output
+declare const passages: Passage[]; // the passages given to the synthesis
+
+const result = await orch.rag.pipeline.verifyAnswer({ question, answer, passages }, context);
 switch (decideVerification(result, orch.rag.pipeline.verification.policy)) {
-  case 'deliver':  break;
-  case 'repair':   /* synthesise again with buildRepairInstruction(result), verify once more */ break;
-  case 'annotate': answer += '\n\n' + verificationNotice(result); break;
-  case 'abstain':  answer = '…'; break;
+  case 'deliver':
+    break;
+  case 'repair':
+    /* synthesise again with buildRepairInstruction(result), verify once more */ break;
+  case 'annotate':
+    answer += '\n\n' + verificationNotice(result);
+    break;
+  case 'abstain':
+    answer = '…';
+    break;
 }
 ```
 

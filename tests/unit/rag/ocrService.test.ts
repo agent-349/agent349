@@ -269,7 +269,7 @@ describe('loaders with OCR', () => {
       type: 'buffer',
       buffer: Buffer.from('%PDF'),
       mimeType: 'application/pdf',
-      metadata: { language: 'es' } as never,
+      metadata: { language: 'es' },
     });
     expect(doc.content).toBe('Texto del escaneo');
     expect(doc.extractionMethod).toBe('pdf+ocr');

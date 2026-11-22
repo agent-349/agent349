@@ -452,7 +452,9 @@ await orch.rag.ingestDirectory('./docs/politicas', 'politicas', {
 
 ### Deduplicación
 
-`IngestionPipeline` calcula el content-hash (SHA-256) de cada chunk antes de procesar. Si un chunk con el mismo `documentId` y el mismo hash ya existe, se omite (controlado por `deduplication: true`, el default). Para forzar re-ingesta de un documento sin cambios de contenido, usá `deduplication: false` o `overwriteExisting: true` (que elimina los chunks anteriores del documento antes de insertar los nuevos).
+`IngestionPipeline` calcula el content-hash (SHA-256) de cada chunk antes de procesar. Con `overwriteExisting: true` (el default), los chunks anteriores del documento se eliminan antes de insertar los nuevos, así que **no se deduplica**: el documento queda con todos sus chunks aunque el texto no haya cambiado. La deduplicación (`deduplication: true`) aplica solo con `overwriteExisting: false`: entonces se omiten los chunks cuyo hash ya existe para ese `documentId` y se conservan los anteriores.
+
+> Hasta esta versión, con los dos valores por defecto, reingerir un documento con el mismo texto lo dejaba sin chunks (se omitían por duplicados y después se borraban los anteriores). Si un documento quedó registrado pero no aparece en las búsquedas, reingiérelo.
 
 ---
 
@@ -903,7 +905,48 @@ Sin `accessRoles` en la metadata de los documentos, todos los usuarios del tenan
 
 ---
 
-## 14. Ejemplos reales
+## 14. Funciones avanzadas de recuperación
+
+Todas están apagadas por defecto y se activan por configuración. El detalle, con ejemplos de código, está en la guía en inglés ([Retrieval](../guides/rag.md)).
+
+### Expansión de consultas (`rag.queryExpansion`)
+
+Busca también con reformulaciones de la pregunta (terminología formal, ortografía corregida, palabras clave) y fusiona los resultados con RRF. `mode`: `off`, `fallback` (solo cuando la búsqueda normal no encuentra nada relevante) o `always`.
+
+### Léxico (`rag.lexicon`)
+
+- **Stop words** por idioma, quitadas del componente por palabra clave o aplicadas de forma nativa por el motor (Meilisearch, Weaviate, pgvector, Milvus) según `stopWordsMode`. Las negaciones se conservan.
+- **Glosario**: términos y sus significados ("KPI = indicador clave de desempeño") que llegan al reescritor y al expansor. Uno por instalación (`glossaryFile`) y otro por consulta (`RAGQuery.glossary`).
+
+### OCR de documentos escaneados (`rag.ocr`)
+
+Las páginas de un PDF sin capa de texto y las imágenes se reconocen con Tesseract (`tesseract.js`, dependencia opcional) en un worker thread que no bloquea el event loop. Los datos de idioma se leen de `langPath`; `allowDownload: false` para instalaciones sin internet. Opcionalmente, las páginas de baja confianza se releen con un modelo de visión.
+
+### Referencias entre documentos (`rag.references`)
+
+Con `mode: 'follow'`, las citas de los fragmentos del contexto ("Anexo XIV", "Ley 12.345", "Decreto 120/15") se resuelven a documentos de la colección y se busca en ellos con la misma pregunta. Los documentos citados que no están se informan en `trace.references.missing`. Quien usa el SDK puede resolver las claves (`RAGQuery.resolveReferences`) o dejar que el SDK use las etiquetas `ref:` que escribe al ingerir.
+
+### Relaciones y vigencia (`rag.relations`, `rag.validity`)
+
+- **Relaciones:** un documento que deroga, modifica o reglamenta a otro ("Derógase el Decreto N° 732/019") se detecta como propuesta. Cuando el documento afectado llega al contexto, se busca también en el que lo cambia, y los dos fragmentos llevan una nota de estado.
+- **Vigencia, versión y prioridad:** `validFrom`, `validTo`, `version` y `priority` (por `RAGQuery.describeDocuments` o metadata). Lo vencido o derogado (confirmado) se marca o se excluye (`inactive: 'flag' | 'exclude'`).
+- `buildContextGuidance` da las instrucciones para que la síntesis trate esas notas y los documentos faltantes.
+
+### Estructura de los documentos (`rag.structure`)
+
+`mode: 'label'` registra en cada chunk qué artículos, parágrafos y secciones cubre (`metadata.custom.section`, etiquetas `art:`, `par:`, `sec:`), los artículos derogados en el propio texto y la redacción vigente. `mode: 'split'` además corta los chunks por artículo, para que ninguno mezcle dos. Con estructura, las relaciones aplican al artículo afectado, se siguen las remisiones internas ("ver punto 4.2", "el artículo anterior") y la línea de fuente nombra el artículo.
+
+### Perfil de lenguaje jurídico (`rag.legal`)
+
+Referencias, relaciones y estructura leen el texto con paquetes por idioma: `es` (España y Latinoamérica), `pt` (Brasil y Portugal), `en` (EE. UU., Reino Unido, UE), `fr`, `it` y `de`. Todos están activos por defecto (`packs` los restringe). Cada instalación puede sumar sus palabras: tipos de norma, verbos, encabezados, marcas de derogación y redacción, remisiones internas. Los identificadores guardan el año en cuatro dígitos (`yearPivot` para los de dos) y reconocen número/año, año/número (UE, Francia), series ("A 7000"), bis/ter y citas codificadas (U.S.C., C.F.R., Pub. L., S.I.).
+
+### Verificación de respuestas (`rag.verification`)
+
+Después de la síntesis, un modelo chico contrasta la respuesta con los fragmentos usados: si cada afirmación está sustentada, si los fragmentos aplican al caso preguntado y qué cifras no aparecen en ellos. `RAGPipeline.verifyAnswer` devuelve el resultado; `decideVerification` aplica la política: entregar, reparar (una segunda síntesis sin lo no sustentado), anotar o abstenerse. `mode` indica si verificar antes de mostrar la respuesta (`blocking`) o después (`after`).
+
+---
+
+## 15. Ejemplos reales
 
 ### Agente de RRHH con acceso a políticas
 
