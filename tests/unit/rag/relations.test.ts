@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ReferenceExtractor } from '../../../src/rag/references/ReferenceExtractor.js';
 import { RelationExtractor } from '../../../src/rag/references/RelationExtractor.js';
 import { documentTags } from '../../../src/rag/references/documentTags.js';
+import { LegalProfile } from '../../../src/rag/legal/LegalProfile.js';
 import { InMemoryVectorStore } from '../../../src/rag/vectorstore/InMemoryVectorStore.js';
 import { EmbeddingRouter } from '../../../src/rag/embedding/EmbeddingRouter.js';
 import { EmbeddingProvider } from '../../../src/rag/embedding/EmbeddingProvider.js';
@@ -35,7 +36,7 @@ describe('RelationExtractor', () => {
     expect(one('Artículo 1°.- Derógase el Decreto N° 732/019.')).toEqual([
       expect.objectContaining({
         type: 'derogates',
-        target: 'decree:732/19',
+        target: 'decree:732/2019',
         scope: 'total',
         strength: 'explicit',
       }),
@@ -53,7 +54,7 @@ describe('RelationExtractor', () => {
     ).toEqual([
       expect.objectContaining({
         type: 'modifies',
-        target: 'decree:654/18',
+        target: 'decree:654/2018',
         scope: 'partial',
         articles: ['5'],
         strength: 'explicit',
@@ -67,7 +68,7 @@ describe('RelationExtractor', () => {
   it('handles the passive voice, English and Portuguese', () => {
     expect(one('El Decreto 732/019 queda derogado.')[0]).toMatchObject({
       type: 'derogates',
-      target: 'decree:732/19',
+      target: 'decree:732/2019',
       strength: 'explicit',
     });
     expect(one('Law 123 is hereby repealed.')[0]).toMatchObject({
@@ -88,15 +89,18 @@ describe('RelationExtractor', () => {
   it('marks as inferred a statement that names several documents', () => {
     const rels = one('Deróganse el Decreto 1/020 y el Decreto 2/020.');
     expect(rels.map((r) => [r.target, r.strength])).toEqual([
-      ['decree:1/20', 'inferred'],
-      ['decree:2/20', 'inferred'],
+      ['decree:1/2020', 'inferred'],
+      ['decree:2/2020', 'inferred'],
     ]);
   });
 
   it('accepts custom verbs', () => {
     const custom = new RelationExtractor({
-      builtin: false,
-      patterns: [{ type: 'derogates', pattern: '\\bwird aufgehoben\\b' }],
+      profile: new LegalProfile({
+        packs: [],
+        references: [{ kind: 'law', words: ['law'] }],
+        relations: [{ type: 'derogates', words: ['wird aufgehoben'] }],
+      }),
     });
     expect(custom.extract('Das Law 55 wird aufgehoben.')[0]).toMatchObject({
       type: 'derogates',
@@ -112,7 +116,7 @@ describe('RelationExtractor', () => {
         'Decreto 1203/020',
         'Derógase el Decreto N° 732/019. Modifícase el artículo 2 del Decreto 1203/020.',
       ),
-    ).toEqual(['ref:decree:1203/20', 'rel:derogates:decree:732/19']);
+    ).toEqual(['ref:decree:1203/2020', 'rel:derogates:decree:732/2019']);
   });
 });
 
@@ -330,7 +334,7 @@ describe('RAGPipeline — relations and validity', () => {
     const { pipeline } = await setup(
       {},
       {
-        tags: { dec732: ['ref:decree:732/19'], dec1203: ['rel:derogates:decree:732/19'] },
+        tags: { dec732: ['ref:decree:732/2019'], dec1203: ['rel:derogates:decree:732/2019'] },
         custom: { manual: { validTo: '2001-01-01' } },
       },
     );

@@ -13,6 +13,8 @@ import type {
 import type { McpServerDeclaration } from '../mcp/types.js';
 import type { ConnectionsConfig } from '../connections/types.js';
 import type { CredentialsConfig } from '../credentials/types.js';
+import type { LegalConfig } from '../rag/legal/LegalProfile.js';
+import { LEGAL_LANGUAGES } from '../rag/legal/packs.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage backend config types
@@ -701,15 +703,6 @@ export interface SDKConfig {
       maxTargets?: number;
       /** Passages searched per cited document. Default: 3. */
       perTarget?: number;
-      /** Built-in patterns (annexes, laws, decrees, circulars, resolutions; es/en/pt). Default: true. */
-      builtin?: boolean;
-      /** Additional patterns: `{ kind, pattern }`, one capture group for the identifier. */
-      patterns?: { kind: string; pattern: string }[];
-      /**
-       * A title like "30 - ANEXO - Formularios" (number, then annex/appendix, no
-       * identifier of its own) identifies `annex:30`. Default: false.
-       */
-      numberedTitles?: boolean;
       /**
        * Tag the chunks at ingestion with the document's identity keys
        * (`ref:<key>`) and stated relations (`rel:<type>:<key>`), so that
@@ -718,7 +711,33 @@ export interface SDKConfig {
        * that rewrites chunk tags must keep these.
        */
       tagDocuments?: boolean;
+      /**
+       * Follow internal references ("ver punto 4.2", "según el artículo 8")
+       * within the same document, for documents ingested with structure
+       * (`rag.structure`). Default: true.
+       */
+      internal?: boolean;
     };
+    /**
+     * Structure of legal and administrative documents at ingestion: articles,
+     * numbered sections and chapters. `'label'` records in each chunk the
+     * units it covers (`metadata.custom.section`, tags `art:` / `sec:`) and the
+     * articles the document marks as repealed or re-worded; `'split'` also
+     * cuts chunks at the headings so that no chunk spans two units (changes
+     * the chunking: re-index to apply). `IngestOptions.structure` overrides it.
+     * Default: `'off'`.
+     */
+    structure?: {
+      mode?: 'off' | 'label' | 'split';
+    };
+    /**
+     * How legal and administrative texts are written, for references,
+     * relations and structure: the built-in language packs to use (`packs`:
+     * es, pt, en, fr, it, de — all by default), the two-digit year pivot, and
+     * the installation's own kinds of references, operative verbs and
+     * structure words. See `LegalConfig`.
+     */
+    legal?: LegalConfig;
     /**
      * Relations between documents (repeals, amendments, regulations): when a
      * document in the context is repealed, amended or regulated by another,
@@ -733,10 +752,6 @@ export interface SDKConfig {
       maxSources?: number;
       /** Passages searched per related document. Default: 3. */
       perSource?: number;
-      /** Built-in operative verbs (es/en/pt). Default: true. */
-      builtin?: boolean;
-      /** Additional verbs: `{ type, pattern }`. */
-      patterns?: { type: 'derogates' | 'modifies' | 'regulates'; pattern: string }[];
     };
     /**
      * Validity, version and priority of documents (`RAGQuery.describeDocuments`
@@ -1289,37 +1304,19 @@ function validate(cfg: SDKConfig): void {
     if (refs.mode !== undefined && refs.mode !== 'off' && refs.mode !== 'follow') {
       throw new ConfigError("rag.references.mode must be 'off' or 'follow'", 'rag.references.mode');
     }
-    for (const p of refs.patterns ?? []) {
-      try {
-        new RegExp(p.pattern, 'u');
-      } catch (err) {
-        throw new ConfigError(
-          `rag.references.patterns: invalid pattern for '${p.kind}': ${err instanceof Error ? err.message : String(err)}`,
-          'rag.references.patterns',
-        );
-      }
-    }
+  }
+  validateLegal(cfg.rag.legal);
+  const st = cfg.rag.structure;
+  if (st?.mode !== undefined && !['off', 'label', 'split'].includes(st.mode)) {
+    throw new ConfigError(
+      "rag.structure.mode must be 'off', 'label' or 'split'",
+      'rag.structure.mode',
+    );
   }
   const rel = cfg.rag.relations;
   if (rel !== undefined) {
     if (rel.mode !== undefined && rel.mode !== 'off' && rel.mode !== 'on') {
       throw new ConfigError("rag.relations.mode must be 'off' or 'on'", 'rag.relations.mode');
-    }
-    for (const p of rel.patterns ?? []) {
-      if (!['derogates', 'modifies', 'regulates'].includes(p.type)) {
-        throw new ConfigError(
-          "rag.relations.patterns: type must be 'derogates', 'modifies' or 'regulates'",
-          'rag.relations.patterns',
-        );
-      }
-      try {
-        new RegExp(p.pattern, 'u');
-      } catch (err) {
-        throw new ConfigError(
-          `rag.relations.patterns: invalid pattern for '${p.type}': ${err instanceof Error ? err.message : String(err)}`,
-          'rag.relations.patterns',
-        );
-      }
     }
   }
   const val = cfg.rag.validity;
@@ -1858,5 +1855,63 @@ function validateVectorStore(rag: SDKConfig['rag']): void {
         'rag.vectorStore.weaviate.classPrefix',
       );
     }
+  }
+}
+
+/** Validates `rag.legal`: known packs, a valid year pivot and compilable patterns. */
+function validateLegal(legal: LegalConfig | undefined): void {
+  if (legal === undefined) return;
+  const where = 'rag.legal';
+  for (const p of legal.packs ?? []) {
+    if (!(LEGAL_LANGUAGES as string[]).includes(p)) {
+      throw new ConfigError(
+        `${where}.packs: unknown pack '${p}' (${LEGAL_LANGUAGES.join(', ')})`,
+        `${where}.packs`,
+      );
+    }
+  }
+  if (
+    legal.yearPivot !== undefined &&
+    (!Number.isInteger(legal.yearPivot) || legal.yearPivot < 0 || legal.yearPivot > 99)
+  ) {
+    throw new ConfigError(
+      `${where}.yearPivot must be an integer between 0 and 99`,
+      `${where}.yearPivot`,
+    );
+  }
+  const check = (fragment: string, path: string): void => {
+    try {
+      new RegExp(fragment, 'iu');
+    } catch (err) {
+      throw new ConfigError(
+        `${path}: invalid pattern '${fragment}': ${err instanceof Error ? err.message : String(err)}`,
+        path,
+      );
+    }
+  };
+  for (const r of legal.references ?? []) {
+    if (typeof r.kind !== 'string' || r.kind === '') {
+      throw new ConfigError(`${where}.references: each entry needs a kind`, `${where}.references`);
+    }
+    if ((r.words === undefined || r.words.length === 0) && r.pattern === undefined) {
+      throw new ConfigError(
+        `${where}.references: '${r.kind}' needs words or a pattern`,
+        `${where}.references`,
+      );
+    }
+    (r.words ?? []).forEach((w) => check(w, `${where}.references`));
+    if (r.pattern !== undefined) check(r.pattern, `${where}.references`);
+  }
+  for (const r of legal.relations ?? []) {
+    if (!['derogates', 'modifies', 'regulates'].includes(r.type)) {
+      throw new ConfigError(
+        `${where}.relations: type must be 'derogates', 'modifies' or 'regulates'`,
+        `${where}.relations`,
+      );
+    }
+    r.words.forEach((w) => check(w, `${where}.relations`));
+  }
+  for (const [k, ws] of Object.entries(legal.structure ?? {})) {
+    (ws ?? []).forEach((w: string) => check(w, `${where}.structure.${k}`));
   }
 }

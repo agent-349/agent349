@@ -21,6 +21,7 @@ import type {
   PassageNote,
   ReferenceResolver,
   ContextGuidanceTexts,
+  ChunkSection,
 } from '../types/index.js';
 import type { EmbeddingRouter } from './embedding/EmbeddingRouter.js';
 import type { VectorStoreAdapter } from './vectorstore/VectorStoreAdapter.js';
@@ -34,6 +35,8 @@ import type { GlossaryEntry, GlossaryParseResult, StopWords } from './lexicon/Le
 import { matchGlossaryTerms, mergeGlossaries } from './lexicon/Lexicon.js';
 import type { ReferenceExtractor } from './references/ReferenceExtractor.js';
 import { REF_TAG, REL_TAG } from './references/documentTags.js';
+import type { StructureParser } from './structure/StructureParser.js';
+import { internalReferenceTag, sectionTags } from './structure/StructureParser.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -97,8 +100,12 @@ export class RAGPipeline {
   readonly #glossaryErrors: GlossaryParseResult['errors'];
   readonly #glossaryRewrite: boolean;
   readonly #stopWordsMode: 'auto' | 'native' | 'query';
-  readonly #references: Required<Omit<RAGPipelineReferenceOptions, 'extractor'>> & {
+  readonly #references: Required<
+    Omit<RAGPipelineReferenceOptions, 'extractor' | 'structure' | 'internal'>
+  > & {
     extractor?: ReferenceExtractor;
+    structure?: StructureParser;
+    internal: boolean;
   };
   readonly #relations: Required<RAGPipelineRelationOptions>;
   readonly #validity: Required<RAGPipelineValidityOptions>;
@@ -159,6 +166,10 @@ export class RAGPipeline {
       ...(options.references?.extractor !== undefined && {
         extractor: options.references.extractor,
       }),
+      ...(options.references?.structure !== undefined && {
+        structure: options.references.structure,
+      }),
+      internal: options.references?.internal ?? options.references?.structure !== undefined,
     };
     this.#relations = {
       mode: options.relations?.mode ?? 'off',
@@ -692,7 +703,10 @@ export class RAGPipeline {
       let rankedAll = ranking.rankedAll;
       if (validityMode === 'on' && this.#validity.inactive === 'exclude') {
         rankedAll = rankedAll.filter((p) => {
-          const reason = inactiveReason(statuses.get(p.metadata.documentId));
+          const reason = passageInactiveReason(
+            statuses.get(p.metadata.documentId),
+            passageSection(p),
+          );
           if (reason === undefined) return true;
           excluded.push({ id: p.id, documentId: p.metadata.documentId, reason });
           excludedPassages.push(p);
@@ -731,36 +745,65 @@ export class RAGPipeline {
     let references: RAGTrace['references'];
     let referencesLatencyMs: number | undefined;
     const referenceMode = ragQuery.references ?? this.#references.mode;
+    const internalOn = this.#references.internal && this.#references.structure !== undefined;
     if (
       referenceMode === 'follow' &&
-      this.#references.extractor !== undefined &&
-      finalPassages.length > 0
+      finalPassages.length > 0 &&
+      (this.#references.extractor !== undefined || internalOn)
     ) {
       const refStart = Date.now();
-      // Without a host resolver, the identity tags written at ingestion (`ref:<key>`).
-      const resolver =
-        ragQuery.resolveReferences ??
-        this.#tagResolver(query, statusParams, retrieval.vector, context, emit);
-      const followed = await this.#followReferences(
-        query,
-        finalPassages,
-        resolver,
-        this.#references.extractor,
-        { ...retrieveParams, filters: securityFilters(filters) },
-        retrieval.vector,
-        { finalTopK, rerank, rerankPolicy, minScore },
-        context,
-        emit,
-      );
-      references = followed.trace;
-      finalPassages = [...finalPassages, ...followed.added];
-      referencesLatencyMs = Date.now() - refStart;
-      emit('rag.references.end', {
-        latencyMs: referencesLatencyMs,
-        followed: references.followed.length,
-        added: followed.added.length,
-        missing: references.missing.map((m) => m.key),
-      });
+      let added = 0;
+      if (this.#references.extractor !== undefined) {
+        // Without a host resolver, the identity tags written at ingestion (`ref:<key>`).
+        const resolver =
+          ragQuery.resolveReferences ??
+          this.#tagResolver(query, statusParams, retrieval.vector, context, emit);
+        const followed = await this.#followReferences(
+          query,
+          finalPassages,
+          resolver,
+          this.#references.extractor,
+          { ...retrieveParams, filters: securityFilters(filters) },
+          retrieval.vector,
+          { finalTopK, rerank, rerankPolicy, minScore },
+          context,
+          emit,
+        );
+        references = followed.trace;
+        finalPassages = [...finalPassages, ...followed.added];
+        added += followed.added.length;
+      }
+      // Internal references ("ver punto 4.2") within the same document.
+      if (internalOn) {
+        const internal = await this.#followInternal(
+          query,
+          finalPassages,
+          this.#references.structure!,
+          { ...retrieveParams, filters: securityFilters(filters) },
+          retrieval.vector,
+          { finalTopK, rerank, rerankPolicy, minScore },
+          context,
+          emit,
+        );
+        if (internal.trace.length > 0) {
+          references = {
+            ...(references ?? { followed: [], missing: [] }),
+            internal: internal.trace,
+          };
+        }
+        finalPassages = [...finalPassages, ...internal.added];
+        added += internal.added.length;
+      }
+      if (references !== undefined) {
+        referencesLatencyMs = Date.now() - refStart;
+        emit('rag.references.end', {
+          latencyMs: referencesLatencyMs,
+          followed: references.followed.length,
+          added,
+          missing: references.missing.map((m) => m.key),
+          ...(references.internal !== undefined && { internal: references.internal.length }),
+        });
+      }
     }
 
     // ── 7. RELATIONS AND STATUS NOTES (optional) ─────────────────────────────
@@ -789,6 +832,8 @@ export class RAGPipeline {
         for (const p of [...finalPassages, ...excludedDocs.values()]) {
           for (const r of statuses.get(p.metadata.documentId)?.incoming ?? []) {
             if (inContext.has(r.fromDocumentId) || planned.has(r.fromDocumentId)) continue;
+            // A relation that names articles is followed only from a passage of those articles.
+            if (!relationApplies(r.articles, passageSection(p))) continue;
             if (planned.size >= this.#relations.maxSources) break;
             planned.add(r.fromDocumentId);
             plan.push({ type: r.type, status: r.status, from: r.fromDocumentId, to: p });
@@ -838,7 +883,12 @@ export class RAGPipeline {
       finalPassages = finalPassages.map((p) => {
         const notes = [
           ...(sourceNotes.get(p.id) ?? []),
-          ...notesFor(statuses.get(p.metadata.documentId), validityMode === 'on'),
+          ...notesFor(
+            statuses.get(p.metadata.documentId),
+            validityMode === 'on',
+            Date.now(),
+            passageSection(p),
+          ),
         ];
         if (notes.length === 0) return p;
         const kinds = kindsByDoc.get(p.metadata.documentId) ?? new Set();
@@ -1276,6 +1326,93 @@ export class RAGPipeline {
     return out;
   }
 
+  /**
+   * Follows the internal references of the passages ("ver punto 4.2") to the
+   * unit they name in the same document, through its `art:` / `sec:` tag.
+   * References to the passage's own units are ignored.
+   */
+  async #followInternal(
+    query: string,
+    passages: Passage[],
+    parser: StructureParser,
+    params: RetrieveParams,
+    vector: number[],
+    rank: RankParams & { minScore: number },
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<{
+    trace: NonNullable<NonNullable<RAGTrace['references']>['internal']>;
+    added: Passage[];
+  }> {
+    const plan: { key: string; label: string; from: Passage }[] = [];
+    const planned = new Set<string>();
+    for (const p of passages) {
+      // Only documents ingested with structure carry the unit tags.
+      const section = passageSection(p);
+      if (section === undefined) continue;
+      const own = new Set(sectionTags(section));
+      for (const ref of parser.internalReferences(p.content)) {
+        const key = internalReferenceTag(ref, section);
+        if (key === undefined) continue;
+        const id = `${p.metadata.documentId}|${key}`;
+        if (own.has(key) || planned.has(id)) continue;
+        if (plan.length >= this.#references.maxTargets) break;
+        planned.add(id);
+        plan.push({ key, label: ref.label, from: p });
+      }
+    }
+    if (plan.length === 0) return { trace: [], added: [] };
+    const seen = new Set(passages.map((p) => p.id));
+    const found = await Promise.all(
+      plan.map((item) =>
+        this.#retrieve(
+          query,
+          {
+            ...params,
+            topK: this.#references.perTarget,
+            filters: {
+              ...params.filters,
+              documentId: item.from.metadata.documentId,
+              tags: [item.key],
+            },
+          },
+          context,
+          emit,
+          vector,
+        ),
+      ),
+    );
+    const fresh: { passage: Passage; item: number }[] = [];
+    found.forEach((r, item) => {
+      for (const p of r.merged) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        fresh.push({ passage: p, item });
+      }
+    });
+    const ranked =
+      fresh.length > 0
+        ? await this.#rank(
+            query,
+            fresh.map((f) => f.passage),
+            { ...rank, finalTopK: fresh.length },
+            context,
+            emit,
+          )
+        : { rankedAll: [] as Passage[] };
+    const itemOf = new Map(fresh.map((f) => [f.passage.id, f.item]));
+    const added = ranked.rankedAll.filter((p) => rank.minScore <= 0 || p.score >= rank.minScore);
+    const trace = plan.map((item, i) => ({
+      key: item.key,
+      label: item.label,
+      fromPassageId: item.from.id,
+      documentId: item.from.metadata.documentId,
+      found: found[i]!.merged.length > 0,
+      added: added.filter((p) => itemOf.get(p.id) === i).map(passageRef),
+    }));
+    return { trace, added };
+  }
+
   /** Re-ranks `candidates` against `query` (or orders them by retrieval score). */
   async #rank(
     query: string,
@@ -1404,16 +1541,20 @@ export class RAGPipeline {
       includeNotes = true,
       noteText = (n: PassageNote): string => n.text,
       notesLabel = 'Status',
+      includeSection = true,
+      sectionText = defaultSectionText,
     } = options;
 
     const parts = passages.map((p) => {
       const content =
         maxCharsPerPassage !== undefined ? p.content.slice(0, maxCharsPerPassage) : p.content;
 
-      const source =
+      const doc =
         sourceLabel === 'source'
           ? (p.metadata.source ?? p.metadata.title ?? p.metadata.documentId)
           : (p.metadata.title ?? p.metadata.source ?? p.metadata.documentId);
+      const unit = includeSection ? sectionText(passageSection(p)) : '';
+      const source = unit !== '' ? `${doc} — ${unit}` : doc;
 
       const notes =
         includeNotes && p.notes !== undefined && p.notes.length > 0
@@ -1505,6 +1646,14 @@ export interface RAGPipelineReferenceOptions {
   perTarget?: number;
   /** Finds the references in the passages. */
   extractor?: ReferenceExtractor;
+  /**
+   * Finds internal references ("ver punto 4.2", "según el artículo 8") and
+   * follows them within the same document, through the `art:` / `sec:` tags
+   * written at ingestion (`rag.structure`).
+   */
+  structure?: StructureParser;
+  /** Follow internal references. Default: true when `structure` is given. */
+  internal?: boolean;
 }
 
 /** Relations between documents in the pipeline (`rag.relations`). */
@@ -1607,14 +1756,71 @@ function sourceNoteText(
     : `This document possibly ${verb} ${label}${articlesText(articles)} (unconfirmed).`;
 }
 
-/** Status notes of a document's passages. */
+/** The structure of a passage (`metadata.custom.section`, written at ingestion with `rag.structure`). */
+export function passageSection(p: Pick<Passage, 'metadata'>): ChunkSection | undefined {
+  const s = p.metadata.custom?.['section'];
+  return s !== null && typeof s === 'object' ? s : undefined;
+}
+
+/**
+ * Whether a relation that names articles applies to a passage: in a document
+ * read with structure, only if the passage covers one of them; without
+ * structure, to the whole document.
+ */
+function relationApplies(
+  articles: string[] | undefined,
+  section: ChunkSection | undefined,
+): boolean {
+  if (articles === undefined || articles.length === 0) return true;
+  // Without structure the passage's articles are unknown: the relation applies to the document.
+  if (section === undefined) return true;
+  // With structure, a passage outside any article (a numbered section) is not the one named.
+  const own = section.articles ?? [];
+  return own.some((a) => articles.includes(a) || articles.includes(a.split(' ')[0]!));
+}
+
+/**
+ * Why a passage is inactive: its document is (expired, repealed in full), or
+ * every article it covers is repealed — by a confirmed partial repeal, or as
+ * the document itself marks them ("Artículo 70 (DEROGADO)").
+ */
+export function passageInactiveReason(
+  status: DocumentStatus | undefined,
+  section: ChunkSection | undefined,
+  now: number = Date.now(),
+): 'expired' | 'derogated' | undefined {
+  const doc = inactiveReason(status, now);
+  if (doc !== undefined) return doc;
+  const own = section?.articles ?? [];
+  if (own.length === 0) return undefined;
+  const repealed = new Set(section?.derogated ?? []);
+  for (const r of status?.incoming ?? []) {
+    if (r.type === 'derogates' && r.status === 'confirmed')
+      (r.articles ?? []).forEach((a) => repealed.add(a));
+  }
+  return own.every((a) => repealed.has(a)) ? 'derogated' : undefined;
+}
+
+/**
+ * Status notes of a passage: its document's validity and the relations other
+ * documents have to it (limited to the passage's articles when both are
+ * known), plus the articles the document itself marks as repealed.
+ */
 export function notesFor(
   status: DocumentStatus | undefined,
   withValidity: boolean,
   now: number = Date.now(),
+  section?: ChunkSection,
 ): PassageNote[] {
-  if (status === undefined) return [];
   const notes: PassageNote[] = [];
+  for (const a of section?.derogated ?? []) {
+    notes.push({
+      kind: 'article_derogated',
+      articles: [a],
+      text: `Article ${a} is marked as repealed in the document.`,
+    });
+  }
+  if (status === undefined) return notes;
   if (withValidity) {
     const to = isoDate(status.validTo);
     const from = isoDate(status.validFrom);
@@ -1628,6 +1834,7 @@ export function notesFor(
     }
   }
   for (const r of status.incoming ?? []) {
+    if (!relationApplies(r.articles, section)) continue;
     const label = r.fromLabel ?? r.fromDocumentId;
     const date = isoDate(r.date);
     const when = date !== undefined ? ` on ${date}` : '';
@@ -1687,6 +1894,18 @@ export function buildContextGuidance(
   }
   if (result.passages.some((p) => (p.notes?.length ?? 0) > 0)) parts.push(t.statusInstruction);
   return parts.join('\n');
+}
+
+/**
+ * The units a passage covers, for its source line: the heading it starts in
+ * ("Artículo 12.1 (PLAZOS)"), with the text that gave the
+ * article its current wording when known.
+ */
+function defaultSectionText(section: ChunkSection | undefined): string {
+  if (section?.label === undefined) return '';
+  const label = section.label.length > 90 ? `${section.label.slice(0, 87)}…` : section.label;
+  const wording = (section.amended ?? []).map((a) => a.by);
+  return wording.length > 0 ? `${label} [${[...new Set(wording)].join('; ')}]` : label;
 }
 
 /** Only the security part of a filter (tenant and roles): reference searches cross the user's scope, never the ACL. */

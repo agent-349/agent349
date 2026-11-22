@@ -115,6 +115,14 @@ export interface IngestOptions {
   overwriteExisting?: boolean;
   /** Additional metadata to merge into every chunk. */
   metadata?: Partial<import('../../types/index.js').DocumentMetadata>;
+  /**
+   * Document structure (articles, numbered sections), overriding
+   * `rag.structure.mode`: `'label'` records in each chunk which units it
+   * covers (`metadata.custom.section`, tags `art:<id>` / `sec:<id>`);
+   * `'split'` also cuts chunks at article and section headings so that no
+   * chunk spans two units. `'off'` leaves chunks as they are.
+   */
+  structure?: 'off' | 'label' | 'split';
   /** Progress callback invoked after each batch step. */
   onProgress?: (progress: IngestProgress) => void;
 }

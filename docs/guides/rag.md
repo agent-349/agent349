@@ -228,8 +228,7 @@ await orch.rag.ingest('./knowledge/salary-bands.pdf', 'hr-policies', {
 
 ### Cross-document references
 
-Regulations and procedures refer to each other ("see Annex XIV", "under Law
-15.896"). With `rag.references.mode: 'follow'`, the passages that reach the
+Regulations and procedures refer to each other ("see Annex XIV", "under Law 12.345"). With `rag.references.mode: 'follow'`, the passages that reach the
 context are scanned for such references; each cited document is searched with
 the same question (and the same query vector) and its passages join the result
 only if they pass the re-ranker and `minScore`. Cited documents that are not in
@@ -240,17 +239,17 @@ say so instead of answering half-way.
 "rag": { "references": { "mode": "follow", "maxTargets": 3, "perTarget": 3 } }
 ```
 
-References are normalised to keys — `annex:14`, `law:12345`, `decree:120/15`,
-`circular:3456`, `resolution:45/20` — so "Anexo XIV", "anexo 14" and "Anexo N°
-14" match. Built-in patterns cover annexes/appendices, laws, decrees,
-circulars and resolutions in Spanish, English and Portuguese; `patterns` adds
-your own (`{ kind, pattern }`, one capture group for the identifier).
+References are normalised to keys — `annex:14`, `law:12345`,
+`decree:120/2015`, `regulation:679/2016`, `usc:12-1831` — so "Anexo XIV",
+"anexo 14" and "Anexo N° 14" match, and so do "Decreto 120/15", "Decreto N°
+120/015" and "Decreto 120/2015". Which words name which kind of norm comes
+from the legal language profile (see *Legal languages* below).
 
 The SDK has no registry of your documents, so the host maps keys to
 documentIds with `RAGQuery.resolveReferences` (or `createRAGTool(..., {
 references })` in agentic mode). `ReferenceExtractor.identify(title)` gives the
 keys that identify a document ("2 - ANEXO II - Decreto 120-15" → `annex:2`,
-`decree:120/15`) for that registry. The searches of cited documents keep the
+`decree:120/2015`) for that registry. The searches of cited documents keep the
 tenant and role filters and drop the rest of the scope (tags, categories): a
 reference made by the document applies whatever the user filtered, never past
 the ACL.
@@ -259,9 +258,9 @@ Without a host registry, the SDK resolves keys on its own: at ingestion it
 tags every chunk with the keys that identify its document (`ref:annex:14`),
 and a reference is looked up by that tag (`rag.references.tagDocuments`,
 default on when references or relations are on; a host that rewrites chunk
-tags must keep them). `numberedTitles: true` makes a title like "30 - ANEXO -
-Formularios" identify `annex:30` — a heuristic for collections that number their
-annexes in file names, off by default.
+tags must keep them). `rag.legal.numberedTitles: true` makes a title like
+"30 - ANEXO - Formularios" identify `annex:30` — a heuristic for collections that
+number their annexes in file names, off by default.
 
 The missing documents are data in the trace; `buildContextGuidance(result)`
 turns them (and the status notes below) into instructions for the synthesis,
@@ -294,6 +293,92 @@ proposal: a host that lets people review them passes the result through
 `RAGQuery.describeDocuments` with `status: 'proposed' | 'confirmed'`. Without
 it, the relations tagged at ingestion (`rel:derogates:decree:732/19`) are used
 as proposals.
+
+### Document structure
+
+Regulations are cited and amended by article, not as a whole.
+`rag.structure.mode` makes ingestion aware of that:
+
+```json
+"rag": { "structure": { "mode": "split" } }
+```
+
+- `'label'` records, in every chunk, the articles and numbered sections it
+  covers (`metadata.custom.section`; tags `art:12.2`, `sec:3.4.6`), the
+  articles the document itself marks as repealed ("Artículo 70 (DEROGADO)")
+  and the text that gave an article its current wording ("(Redacción dada
+  por la Ley …)", or a closing "Circular 1234 de 15/03/2021" line as legal
+  compilations write it).
+- `'split'` also cuts the chunks at article and section headings, so that a
+  chunk never mixes two articles (one in force and one repealed, for
+  instance). It changes the chunking: re-index the collection to apply it.
+  `IngestOptions.structure` sets the mode per document.
+
+Headings are recognised at the start of a line with the words of the legal
+language profile; tables of contents (dot leaders, page numbers), citations
+("artículo 302 del Código Penal", "Section 5 of the Act") and list items are
+not taken as headings. Numbered sections ("3.4.6") work in any language.
+
+With structure:
+
+- a relation that names articles ("modifies article 5") notes only the
+  passages of those articles, and a confirmed partial repeal excludes only
+  them under `inactive: 'exclude'`;
+- an article repealed in the text gets a note, and is excluded under
+  `inactive: 'exclude'` when its passage holds nothing else;
+- internal references ("ver punto 4.2", "según el artículo 8", but not
+  "el artículo 8 del Decreto 120/15") are followed within the same document
+  when references are on (`rag.references.internal`, default true), through
+  the unit tags, and reported in `trace.references.internal`;
+- the source line names the unit: `Source: Norma — Artículo 12.1 (PLAZOS) [Circular 1234 de 15/03/2021]`.
+
+### Legal languages
+
+References, relations and structure read the text through a legal language
+profile, `rag.legal`. Built-in packs follow the drafting conventions of each
+language and its main traditions:
+
+| Pack | Traditions | Examples |
+|---|---|---|
+| `es` | Spain, Latin America | "Artículo 5°", "Real Decreto 1720/2007", "Derógase…", "(Redacción dada por…)" |
+| `pt` | Brazil, Portugal | "Art. 5º", "§ 1º" and "Parágrafo único" (paragraphs), "Fica revogada a Lei nº…", "(Redação dada pela Lei…)" |
+| `en` | US, UK, EU, international | "SEC. 101", "Section 5", "§ 1026.5", "12 U.S.C. 248", "Pub. L. 111-203", "S.I. 2017/692", "Directive 2006/48/EC", "is hereby repealed" |
+| `fr` | France, Belgium | "Article premier", "Art. 1er", "loi n° 78-17" (year-number), "est abrogé" |
+| `it` | Italy | "Art. 2-bis", "decreto legislativo 30 giugno 2003, n. 196", "è abrogato" |
+| `de` | Germany, Austria | "§ 5", "Artikel 4", "(weggefallen)", "wird aufgehoben", "tritt außer Kraft" |
+
+All packs are active by default: a collection that mixes local rules with EU
+directives needs no setting. The `fr`, `it` and `de` packs follow the usual
+conventions of those traditions; check them against your documents.
+
+```json
+"rag": {
+  "legal": {
+    "packs": ["es", "pt", "en", "fr", "it", "de"],
+    "yearPivot": 30,
+    "numberedTitles": false,
+    "references": [{ "kind": "policy", "words": ["pol[ií]tica", "policy"] }],
+    "relations": [{ "type": "derogates", "words": ["se\\s+deja\\s+sin\\s+vigor"] }],
+    "structure": { "article": ["cl[aá]usula"], "repealed": ["sin\\s+vigor"] }
+  }
+}
+```
+
+- `packs` restricts the built-in packs.
+- `yearPivot`: two-digit years up to it read as 20YY, above as 19YY (default:
+  the current two-digit year + 1).
+- `references`, `relations`, `structure`: the installation's own words
+  (regular-expression fragments, case-insensitive) — kinds of norms, operative
+  verbs, heading words, repeal and wording markers, internal-reference words.
+  `references` also takes a full `pattern` with capture groups and an `order`
+  (`number/year` or `year/number`).
+
+Identifiers keep the full year: number/year ("120/15" → `120/2015`),
+year/number when the context marks it (EU "(UE) 2016/679", "2006/48/EC") or
+the shape does ("2018/293": a year, then a number that cannot be one), and a
+pack's own order (France, "78-17" → `17/1978`). Series letters ("Comunicación
+A 7000" → `a-7000`) and bis/ter are kept. A year that belongs to a title
+("Companies Act 2006") is not an identifier.
 
 ### Validity, version and priority
 

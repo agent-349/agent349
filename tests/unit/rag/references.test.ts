@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { ReferenceExtractor } from '../../../src/rag/references/ReferenceExtractor.js';
+import { LegalProfile } from '../../../src/rag/legal/LegalProfile.js';
 import { InMemoryVectorStore } from '../../../src/rag/vectorstore/InMemoryVectorStore.js';
 import { EmbeddingRouter } from '../../../src/rag/embedding/EmbeddingRouter.js';
 import { EmbeddingProvider } from '../../../src/rag/embedding/EmbeddingProvider.js';
@@ -26,9 +27,9 @@ describe('ReferenceExtractor', () => {
     expect(refs.map((r) => r.key)).toEqual([
       'annex:14',
       'law:12345',
-      'decree:120/15',
+      'decree:120/2015',
       'circular:3456',
-      'resolution:45/20',
+      'resolution:45/2020',
     ]);
     expect(refs[0]).toEqual({ key: 'annex:14', label: 'Anexo XIV', count: 2 });
   });
@@ -36,25 +37,27 @@ describe('ReferenceExtractor', () => {
   it('handles English and Portuguese, and rejects invalid Roman numerals', () => {
     expect(
       x.extract('See Annex IV and Law 123; ver Lei 8.078 e Decreto-Lei 41/2019').map((r) => r.key),
-    ).toEqual(['annex:4', 'law:123', 'law:8078', 'decree:41/19']);
+    ).toEqual(['annex:4', 'law:123', 'law:8078', 'decree:41/2019']);
     expect(x.extract('Anexo IIII y anexo Informativo')).toEqual([]);
   });
 
   it('identifies a document from its title', () => {
-    expect(x.identify('2 - ANEXO II - Decreto 120-15.pdf')).toEqual(['annex:2', 'decree:120/15']);
+    expect(x.identify('2 - ANEXO II - Decreto 120-15.pdf')).toEqual(['annex:2', 'decree:120/2015']);
     expect(x.identify('14 A - ANEXO XIV - Envío de Documentación.pdf')).toEqual(['annex:14']);
     expect(x.identify('Reglamento Interno 2025.pdf')).toEqual([]);
     expect(x.identify('30 - ANEXO - Formularios.pdf')).toEqual([]);
     expect(
-      new ReferenceExtractor({ numberedTitles: true }).identify('30 - ANEXO - Formularios.pdf'),
+      new ReferenceExtractor({ profile: new LegalProfile({ numberedTitles: true }) }).identify('30 - ANEXO - Formularios.pdf'),
     ).toEqual(['annex:30']);
     expect(x.identify('Reglamento.pdf', 'ANEXO XXX - Formularios ...')).toEqual(['annex:30']);
   });
 
   it('accepts custom patterns and can drop the built-in ones', () => {
     const custom = new ReferenceExtractor({
-      builtin: false,
-      patterns: [{ kind: 'policy', pattern: '\\bPolicy\\s+([A-Z]{2}-\\d+)' }],
+      profile: new LegalProfile({
+        packs: [],
+        references: [{ kind: 'policy', pattern: '\\bPolicy\\s+([A-Z]{2}-\\d+)' }],
+      }),
     });
     expect(custom.extract('Under Policy HR-12 and Annex IV').map((r) => r.key)).toEqual([
       'policy:hr-12',

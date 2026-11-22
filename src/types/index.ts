@@ -1641,6 +1641,25 @@ export interface DocumentStatus {
   incoming?: IncomingRelation[];
 }
 
+/** What a chunk covers, stored in `metadata.custom.section` at ingestion (`rag.structure`). */
+export interface ChunkSection {
+  /** Articles the chunk covers (`['12.1', '12.2']`). */
+  articles?: string[];
+  /** Paragraphs the chunk covers, as `<article>§<n>` (`['5§2']`). */
+  paragraphs?: string[];
+  /** Numbered sections the chunk covers (`['3.4.6']`). */
+  sections?: string[];
+  /** The article before the chunk's first article, and after its last (for "the preceding article"). */
+  prevArticle?: string;
+  nextArticle?: string;
+  /** Heading of the unit the chunk starts in. */
+  label?: string;
+  /** Articles of the chunk that the document marks as repealed. */
+  derogated?: string[];
+  /** Articles of the chunk whose wording was given by another text. */
+  amended?: { article: string; by: string }[];
+}
+
 /** Describes documents by `documentId` (see `RAGQuery.describeDocuments`). Unknown ids may be omitted. */
 export type DocumentDescriber = (documentIds: string[]) => Promise<Record<string, DocumentStatus>>;
 
@@ -1658,7 +1677,8 @@ export interface PassageNote {
     | 'modified'
     | 'regulated'
     | 'relation_source'
-    | 'version';
+    | 'version'
+    | 'article_derogated';
   /** For relation notes: `'proposed'` relations are possible, not established. */
   status?: 'proposed' | 'confirmed';
   /** The other document of a relation note. */
@@ -1777,6 +1797,15 @@ export interface RAGTrace {
     }[];
     /** Cited documents that are not in the collection. */
     missing: { key: string; label: string; fromPassageId: string; fromDocumentId: string }[];
+    /** Internal references followed within a document ("ver punto 4.2"); `found` is false when no chunk carries the unit. */
+    internal?: {
+      key: string;
+      label: string;
+      fromPassageId: string;
+      documentId: string;
+      found: boolean;
+      added: { id: string; documentId: string; chunkIndex?: number; score: number }[];
+    }[];
   };
   /**
    * Validity and relations of the documents in the context; absent when both
@@ -1785,7 +1814,7 @@ export interface RAGTrace {
   status?: {
     /** Notes attached to the passages of each document. */
     notes: { documentId: string; kinds: PassageNote['kind'][] }[];
-    /** Passages left out because their document is inactive (`rag.validity.inactive: 'exclude'`). */
+    /** Passages left out because their document, or every article they cover, is inactive (`rag.validity.inactive: 'exclude'`). */
     excluded: { id: string; documentId: string; reason: 'expired' | 'derogated' }[];
     /** Documents searched because they repeal, amend or regulate one in the context. */
     followed: {
@@ -2034,6 +2063,10 @@ export interface FormatOptions {
   noteText?: (note: PassageNote) => string;
   /** Label of the notes line. Default: `'Status'`. */
   notesLabel?: string;
+  /** Add the article or section of each passage to its source line (`rag.structure`). Default: true. */
+  includeSection?: boolean;
+  /** Renders the article or section of a passage (`metadata.custom.section`); empty to omit. */
+  sectionText?: (section: ChunkSection | undefined) => string;
 }
 
 /** Texts of {@link buildContextGuidance}; each overrides the English default. */

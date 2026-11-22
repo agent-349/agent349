@@ -89,10 +89,9 @@ series, incompatible behavior changes bump the minor version.
 ### Added
 
 - **Cross-document references.** `rag.references` (`mode: 'off' | 'follow'`,
-  `maxTargets`, `perTarget`, `builtin`, `patterns`): the passages that reach
-  the context are scanned for references to other documents
-  (`ReferenceExtractor`: annexes, laws, decrees, circulars, resolutions in
-  es/en/pt, normalised to keys like `annex:14`, plus custom patterns); the
+  `maxTargets`, `perTarget`): the passages that reach the context are
+  scanned for references to other documents (`ReferenceExtractor`,
+  normalised to keys like `annex:14` or `decree:120/2015`); the
   host resolves keys to documentIds (`RAGQuery.resolveReferences`,
   `createRAGTool(..., { references })`); each cited document is searched with
   the same question and query vector (security filters only) and what passes
@@ -100,15 +99,15 @@ series, incompatible behavior changes bump the minor version.
   references followed and the cited documents missing from the collection;
   `metrics.referencesLatencyMs`; audited as `rag.references.end`.
   `ReferenceExtractor.identify(title)` gives a document's identity keys
-  (`numberedTitles: true` adds the "30 - ANEXO - …" title heuristic, off by
-  default). Without a host resolver, references resolve through the chunk tags
+  (`rag.legal.numberedTitles` adds the "30 - ANEXO - …" title heuristic, off
+  by default). Without a host resolver, references resolve through the chunk tags
   written at ingestion (`ref:<key>`; `rag.references.tagDocuments`, default on
   when references or relations are on).
 
 - **Relations between documents.** `RelationExtractor` finds what a document
   does to others from its operative wording — repeals (`derogates`, total or
   partial, with articles), amendments (`modifies`) and regulations
-  (`regulates`) in es/en/pt, plus custom verbs — as proposals marked
+  (`regulates`) — as proposals marked
   `explicit` or `inferred`. `rag.relations` (`mode: 'off' | 'on'`,
   `maxSources`, `perSource`): when a document in the context is repealed,
   amended or regulated by another, that one is searched with the same question
@@ -126,6 +125,39 @@ series, incompatible behavior changes bump the minor version.
   `Status:` line (`includeNotes`, `noteText`, `notesLabel`), `trace.status`
   lists notes, exclusions and related documents searched;
   `metrics.statusLatencyMs`; audited as `rag.status.end`.
+
+- **Document structure.** `rag.structure.mode` (`'off'` default, `'label'`,
+  `'split'`; `IngestOptions.structure` overrides it): `StructureParser` finds
+  articles ("Artículo 12.2", "Art. 8°", "57 bis"), numbered sections ("3.4.6",
+  "IV.3.4") and chapters, skipping tables of contents and citations; each
+  chunk records the units it covers in `metadata.custom.section` and tags
+  `art:<id>` / `sec:<id>`, with the articles the document marks as repealed
+  ("Artículo 70 (DEROGADO)") and the text that gave an article its wording
+  ("(Redacción dada por …)", or a closing "Circular 1234 de 15/03/2021" line).
+  `'split'` cuts chunks at headings so that no chunk spans two units (a unit
+  too small to stand alone joins the next). Relations that name articles
+  apply only to the passages of those articles (`passageInactiveReason`,
+  `notesFor(…, section)`); an article repealed in the text gets an
+  `article_derogated` note and, with `inactive: 'exclude'`, leaves the
+  context when the passage holds nothing else. Internal references ("ver
+  punto 4.2", "según el artículo 8") are followed within the document
+  (`rag.references.internal`, default on; `trace.references.internal`).
+  `formatForContext` adds the unit to the source line (`includeSection`,
+  `sectionText`).
+
+- **Legal language profile (`rag.legal`, `LegalProfile`).** References,
+  relations and structure read the text through built-in language packs —
+  `es` (Spain, Latin America), `pt` (Brazil, Portugal), `en` (US, UK, EU),
+  `fr`, `it`, `de`; all active by default, restricted with `packs` — plus the
+  installation's own words for kinds of norms, operative verbs, headings,
+  repeal and wording markers and internal references. Identifiers keep the
+  full year (`yearPivot` for two-digit years) and read number/year or
+  year/number by context, shape or pack (EU "2016/679", France "78-17");
+  series letters, bis/ter, codified citations ("12 U.S.C. 248", "Pub. L.
+  111-203", "S.I. 2017/692"), Brazilian paragraphs ("§ 1º", "Parágrafo
+  único"), "Article premier", "Art. 2-bis", German "§ 5" and relative
+  references ("el artículo anterior") are supported. `LegalProfile.normaliseKey`
+  migrates keys stored with two-digit years.
 
 - **`buildContextGuidance(result, texts?)`.** Instructions for the synthesis:
   the cited documents missing from the collection and how to treat status

@@ -55,17 +55,21 @@ export { ImageLoader } from './ingestion/loaders/ImageLoader.js';
 export { ReferenceExtractor } from './references/ReferenceExtractor.js';
 export type {
   ReferenceExtractorOptions,
-  ReferencePattern,
   ExtractedReference,
 } from './references/ReferenceExtractor.js';
 export { RelationExtractor } from './references/RelationExtractor.js';
 export type {
   RelationExtractorOptions,
-  RelationPattern,
   RelationType,
   ExtractedRelation,
 } from './references/RelationExtractor.js';
 export { documentTags, REF_TAG, REL_TAG } from './references/documentTags.js';
+export { StructureParser, sectionTags, internalReferenceTag } from './structure/StructureParser.js';
+export { LegalProfile, defaultLegalProfile } from './legal/LegalProfile.js';
+export type { LegalConfig, LegalReferenceConfig } from './legal/LegalProfile.js';
+export { LEGAL_PACKS, LEGAL_LANGUAGES } from './legal/packs.js';
+export type { LegalPack } from './legal/packs.js';
+export type { DocumentSection, InternalReference } from './structure/StructureParser.js';
 export type { VisionRecognizerOptions } from './ocr/visionRecognizer.js';
 export {
   StopWords,
@@ -83,7 +87,14 @@ export type {
   QueryExpansionOutcome,
 } from './queryRewriting/QueryExpander.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
-export { RAGPipeline, buildContextGuidance, notesFor, inactiveReason } from './RAGPipeline.js';
+export {
+  RAGPipeline,
+  buildContextGuidance,
+  notesFor,
+  inactiveReason,
+  passageInactiveReason,
+  passageSection,
+} from './RAGPipeline.js';
 export type {
   RAGPipelineExpansionOptions,
   RAGPipelineLexiconOptions,

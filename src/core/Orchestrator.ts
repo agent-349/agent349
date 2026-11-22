@@ -130,6 +130,8 @@ import { StopWords, parseGlossary } from '../rag/lexicon/Lexicon.js';
 import { ReferenceExtractor } from '../rag/references/ReferenceExtractor.js';
 import { RelationExtractor } from '../rag/references/RelationExtractor.js';
 import { documentTags } from '../rag/references/documentTags.js';
+import { StructureParser } from '../rag/structure/StructureParser.js';
+import { LegalProfile } from '../rag/legal/LegalProfile.js';
 import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
 import type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
@@ -2425,13 +2427,10 @@ export class Orchestrator {
     const reranker = this.#rerankerOverride ?? this.#buildReranker(ragCfg.reranker);
     const queryRewriter = this.#buildQueryRewriter(ragCfg.queryRewriting);
 
-    const referenceExtractor = new ReferenceExtractor({
-      ...(ragCfg.references?.builtin !== undefined && { builtin: ragCfg.references.builtin }),
-      ...(ragCfg.references?.patterns !== undefined && { patterns: ragCfg.references.patterns }),
-      ...(ragCfg.references?.numberedTitles !== undefined && {
-        numberedTitles: ragCfg.references.numberedTitles,
-      }),
-    });
+    // Legal language profile (rag.legal): shared by references, relations and structure.
+    const legalProfile = new LegalProfile(ragCfg.legal ?? {});
+    const referenceExtractor = new ReferenceExtractor({ profile: legalProfile });
+    const structureParser = new StructureParser(legalProfile);
 
     const ragPipeline = new RAGPipeline(
       embeddingRouter,
@@ -2453,6 +2452,10 @@ export class Orchestrator {
             perTarget: ragCfg.references.perTarget,
           }),
           extractor: referenceExtractor,
+          structure: structureParser,
+          ...(ragCfg.references?.internal !== undefined && {
+            internal: ragCfg.references.internal,
+          }),
         },
         relations: {
           mode: ragCfg.relations?.mode ?? 'off',
@@ -2479,9 +2482,8 @@ export class Orchestrator {
       ragCfg.references?.tagDocuments ??
       (ragCfg.references?.mode === 'follow' || ragCfg.relations?.mode === 'on');
     const relationExtractor = new RelationExtractor({
+      profile: legalProfile,
       references: referenceExtractor,
-      ...(ragCfg.relations?.builtin !== undefined && { builtin: ragCfg.relations.builtin }),
-      ...(ragCfg.relations?.patterns !== undefined && { patterns: ragCfg.relations.patterns }),
     });
     const tagDocument = tagDocuments
       ? (doc: { title?: string; text: string }): string[] =>
@@ -2513,6 +2515,7 @@ export class Orchestrator {
           distanceMetric: 'cosine',
         },
         ...(tagDocument !== undefined && { tagDocument }),
+        structure: { mode: ragCfg.structure?.mode ?? 'off', parser: structureParser },
       },
     );
 

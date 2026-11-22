@@ -8,6 +8,8 @@ import type {
   IngestProgress,
   IngestDirectoryOptions,
   ChunkingConfig,
+  RawDocument,
+  TextChunk,
 } from './types.js';
 import { EXTENSION_TO_MIME } from './types.js';
 import type {
@@ -26,6 +28,8 @@ import type { VectorStoreAdapter } from '../vectorstore/VectorStoreAdapter.js';
 import type { EventBus } from '../../events/EventBus.js';
 import type { TokenTracker } from '../../tokens/TokenTracker.js';
 import { SDKError } from '../../errors/index.js';
+import { StructureParser, sectionTags } from '../structure/StructureParser.js';
+import type { DocumentSection } from '../structure/StructureParser.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal types
@@ -53,6 +57,8 @@ export interface IngestionPipelineOptions {
    * every chunk (identity keys and stated relations, `rag.references.tagDocuments`).
    */
   tagDocument?: (doc: { title?: string; text: string }) => string[];
+  /** Document structure by default (`rag.structure`); `IngestOptions.structure` overrides the mode. */
+  structure?: { mode: 'off' | 'label' | 'split'; parser?: StructureParser };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,7 +169,14 @@ export class IngestionPipeline {
     // 2. CHUNK ───────────────────────────────────────────────────────────────
     this.#bus.emit('ingest.chunk.start', { documentId: rawDoc.metadata.documentId });
     const chunker = this.#selectChunker(config.chunking.strategy);
-    let chunks = chunker.chunk(rawDoc, config.chunking);
+    const structureMode = options.structure ?? this.#options.structure?.mode ?? 'off';
+    const parser = this.#options.structure?.parser ?? new StructureParser();
+    const sections = structureMode !== 'off' ? parser.parse(rawDoc.content) : [];
+    let chunks =
+      structureMode === 'split' && sections.length > 0
+        ? chunkBySegments(rawDoc, chunker, config.chunking, parser, sections)
+        : chunker.chunk(rawDoc, config.chunking);
+    if (sections.length > 0) chunks = labelChunks(rawDoc.content, chunks, parser, sections);
 
     // Assign chunkIndex / totalChunks (chunkers do this, but ensure correctness)
     const totalChunks = chunks.length;
@@ -641,6 +654,80 @@ export class IngestionPipeline {
 
 function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf-8').digest('hex');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Structure
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Chunks a document without crossing article or section headings: each unit
+ * is chunked on its own. A unit too small to stand alone (a heading, a
+ * repealed article left empty) joins the next one.
+ */
+function chunkBySegments(
+  doc: RawDocument,
+  chunker: ChunkingStrategy,
+  config: ChunkingConfig,
+  parser: StructureParser,
+  sections: DocumentSection[],
+): TextChunk[] {
+  const minChars = (config.minChunkSize ?? 100) * 4;
+  const merged: [number, number][] = [];
+  let open: number | undefined;
+  for (const [a, b] of parser.segments(doc.content, sections)) {
+    const start = open ?? a;
+    if (doc.content.slice(start, b).trim().length < minChars) {
+      open = start;
+      continue;
+    }
+    merged.push([start, b]);
+    open = undefined;
+  }
+  if (open !== undefined) {
+    const last = merged.pop();
+    merged.push([last?.[0] ?? open, doc.content.length]);
+  }
+  const out: TextChunk[] = [];
+  for (const [a, b] of merged) {
+    const part = chunker.chunk(
+      { ...doc, content: doc.content.slice(a, b) },
+      // The unit was already merged up to the minimum: keep whatever it yields.
+      { ...config, minChunkSize: 0 },
+    );
+    for (const c of part) {
+      out.push({ ...c, startOffset: a + c.startOffset, endOffset: a + c.endOffset });
+    }
+  }
+  return out.map((c, index) => ({ ...c, index }));
+}
+
+/** Records in each chunk the units it covers (`metadata.custom.section`, tags `art:` / `sec:`). */
+function labelChunks(
+  content: string,
+  chunks: TextChunk[],
+  parser: StructureParser,
+  sections: DocumentSection[],
+): TextChunk[] {
+  let cursor = 0;
+  return chunks.map((c) => {
+    // Offsets from the chunkers are approximate when text repeats: search forward.
+    const probe = c.content.trimStart().slice(0, 200);
+    const found = probe !== '' ? content.indexOf(probe, cursor) : -1;
+    const start = found >= 0 ? found : c.startOffset;
+    cursor = Math.max(cursor, start + 1);
+    const section = parser.cover(sections, start, start + c.content.trimStart().length);
+    if (Object.keys(section).length === 0) return c;
+    const tags = sectionTags(section);
+    return {
+      ...c,
+      metadata: {
+        ...c.metadata,
+        custom: { ...c.metadata.custom, section },
+        ...(tags.length > 0 && { tags: [...new Set([...(c.metadata.tags ?? []), ...tags])] }),
+      },
+    };
+  });
 }
 
 // Re-export ChunkingStrategy so callers can type the constructor arg
