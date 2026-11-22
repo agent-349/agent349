@@ -255,6 +255,62 @@ tenant and role filters and drop the rest of the scope (tags, categories): a
 reference made by the document applies whatever the user filtered, never past
 the ACL.
 
+Without a host registry, the SDK resolves keys on its own: at ingestion it
+tags every chunk with the keys that identify its document (`ref:annex:14`),
+and a reference is looked up by that tag (`rag.references.tagDocuments`,
+default on when references or relations are on; a host that rewrites chunk
+tags must keep them). `numberedTitles: true` makes a title like "30 - ANEXO -
+Formularios" identify `annex:30` — a heuristic for collections that number their
+annexes in file names, off by default.
+
+The missing documents are data in the trace; `buildContextGuidance(result)`
+turns them (and the status notes below) into instructions for the synthesis,
+to append after the context. `createRAGTool` appends it to its output.
+
+### Relations between documents
+
+A newer rule often repeals or amends an older one, and the older one does not
+mention it: following references forward never finds the change.
+`rag.relations.mode: 'on'` looks the other way: when a document in the context
+is repealed, amended or regulated by another, that one is searched with the
+same question and joins the result if it passes the re-ranker and `minScore`;
+both carry a note ("Repealed by Decree 1203/020 on 2020-05-04", "This document
+repeals Decree 732/019").
+
+```json
+"rag": {
+  "relations": { "mode": "on", "maxSources": 3, "perSource": 3 },
+  "validity": { "mode": "on", "inactive": "flag", "priorityWeight": 0.1 }
+}
+```
+
+`RelationExtractor` proposes relations from the operative wording of a
+document — "Derógase el Decreto N° 732/019", "Modifícase el artículo 5 del
+Decreto 654/018", "Law 123 is hereby repealed", "Fica revogada a Lei 8.078" —
+with scope, articles and a strength (`explicit` when the sentence opens with
+the verb and names one document). Narratives in the past ("the decree
+repealed…") are not taken. Wording varies, so a detected relation is a
+proposal: a host that lets people review them passes the result through
+`RAGQuery.describeDocuments` with `status: 'proposed' | 'confirmed'`. Without
+it, the relations tagged at ingestion (`rel:derogates:decree:732/19`) are used
+as proposals.
+
+### Validity, version and priority
+
+`rag.validity.mode: 'on'` reads, per document, `validFrom`, `validTo`,
+`version` and `priority` (`high` / `normal` / `low`) — from
+`RAGQuery.describeDocuments` or from `metadata.custom` of the chunks. An
+expired document, or one repealed in full by a confirmed relation, is
+*inactive*: flagged by default, left out with `inactive: 'exclude'` (a
+proposed relation only warns, it never excludes; the replacing document is
+still searched). Priority adds or subtracts `priorityWeight` to the score
+before the final cut. Read at query time, so changing a date needs no
+re-indexing.
+
+Notes reach the model as a `Status:` line under each passage
+(`formatForContext`; `noteText` renders them in your language), and
+`trace.status` records the notes, exclusions and related documents searched.
+
 ### OCR of scanned documents
 
 With `rag.ocr.enabled`, the PDF loader keeps the text layer of each page and

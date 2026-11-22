@@ -1465,6 +1465,8 @@ export interface Passage {
   collection: string;
   /** Raw embedding vector (only populated when `includeEmbeddings` is true). */
   embedding?: number[];
+  /** Status notes (validity, relations); see `RAGQuery.validity` and `RAGQuery.relations`. */
+  notes?: PassageNote[];
 }
 
 /**
@@ -1577,10 +1579,100 @@ export interface RAGQuery {
    * missing references. Supplied by the host, which owns the document registry.
    */
   resolveReferences?: ReferenceResolver;
+  /**
+   * Relations between documents for this search, overriding
+   * `rag.relations.mode`: with `'on'`, documents that repeal, amend or
+   * regulate the ones in the context are searched too, and the passages carry
+   * status notes. Uses {@link RAGQuery.describeDocuments} when given; otherwise
+   * the relations tagged at ingestion (`rel:<type>:<key>`).
+   */
+  relations?: 'off' | 'on';
+  /**
+   * Validity, version and priority of the documents for this search,
+   * overriding `rag.validity.mode`: expired or repealed passages are flagged
+   * (or excluded, `rag.validity.inactive`) and priority weighs the ranking.
+   * Uses {@link RAGQuery.describeDocuments} when given; otherwise
+   * `metadata.custom.validFrom|validTo|version|priority` of the passages.
+   */
+  validity?: 'off' | 'on';
+  /**
+   * Describes documents of the collection: validity, version, priority and
+   * the relations other documents have to them (incoming). Supplied by a
+   * host that keeps that information outside the index (and lets people
+   * confirm relations); read at query time, so editing it needs no re-indexing.
+   */
+  describeDocuments?: DocumentDescriber;
 }
 
 /** Maps reference keys to the documentIds they identify (see `RAGQuery.resolveReferences`). */
 export type ReferenceResolver = (keys: string[]) => Promise<Record<string, string[]>>;
+
+/** How one document affects another (see `RelationExtractor`). */
+export type DocumentRelationType = 'derogates' | 'modifies' | 'regulates';
+
+/** A relation another document has to the described one. */
+export interface IncomingRelation {
+  type: DocumentRelationType;
+  /** The document that repeals, amends or regulates the described one. */
+  fromDocumentId: string;
+  /** Its title or reference, for notes and traces. */
+  fromLabel?: string;
+  /** `'total'` or `'partial'`. Default: total for repeals, partial otherwise. */
+  scope?: 'total' | 'partial';
+  /** Articles affected. */
+  articles?: string[];
+  /** `'proposed'` (detected, not reviewed) or `'confirmed'`. Only confirmed repeals make a document inactive. */
+  status: 'proposed' | 'confirmed';
+  /** When it applies (ISO date), if known. */
+  date?: string;
+}
+
+/** What the host knows about a document (see `RAGQuery.describeDocuments`). */
+export interface DocumentStatus {
+  /** In force from (ISO date). */
+  validFrom?: string;
+  /** In force until (ISO date); after it the document is inactive. */
+  validTo?: string;
+  /** Version label. */
+  version?: string;
+  /** Ranking priority. Default: `'normal'`. */
+  priority?: 'high' | 'normal' | 'low';
+  /** Relations other documents have to this one. */
+  incoming?: IncomingRelation[];
+}
+
+/** Describes documents by `documentId` (see `RAGQuery.describeDocuments`). Unknown ids may be omitted. */
+export type DocumentDescriber = (documentIds: string[]) => Promise<Record<string, DocumentStatus>>;
+
+/**
+ * A status note on a passage, from the validity of its document or the
+ * relations of other documents to it. `text` is an English rendering; hosts
+ * may render their own from the structured fields.
+ */
+export interface PassageNote {
+  kind:
+    | 'expired'
+    | 'not_yet_valid'
+    | 'derogated'
+    | 'partially_derogated'
+    | 'modified'
+    | 'regulated'
+    | 'relation_source'
+    | 'version';
+  /** For relation notes: `'proposed'` relations are possible, not established. */
+  status?: 'proposed' | 'confirmed';
+  /** The other document of a relation note. */
+  documentId?: string;
+  label?: string;
+  /** For `relation_source`: what this passage's document does to `label`. */
+  relation?: DocumentRelationType;
+  articles?: string[];
+  /** Date of the note (validity date or relation date), ISO. */
+  date?: string;
+  /** Version label (`version`). */
+  version?: string;
+  text: string;
+}
 
 /**
  * One glossary entry: terms of the domain that the search should treat as
@@ -1685,6 +1777,24 @@ export interface RAGTrace {
     }[];
     /** Cited documents that are not in the collection. */
     missing: { key: string; label: string; fromPassageId: string; fromDocumentId: string }[];
+  };
+  /**
+   * Validity and relations of the documents in the context; absent when both
+   * are off for the search.
+   */
+  status?: {
+    /** Notes attached to the passages of each document. */
+    notes: { documentId: string; kinds: PassageNote['kind'][] }[];
+    /** Passages left out because their document is inactive (`rag.validity.inactive: 'exclude'`). */
+    excluded: { id: string; documentId: string; reason: 'expired' | 'derogated' }[];
+    /** Documents searched because they repeal, amend or regulate one in the context. */
+    followed: {
+      type: DocumentRelationType;
+      status: 'proposed' | 'confirmed';
+      fromDocumentId: string;
+      toDocumentId: string;
+      added: { id: string; documentId: string; chunkIndex?: number; score: number }[];
+    }[];
   };
   /** Lexical processing of the query; absent when nothing applied. */
   lexicon?: {
@@ -1914,10 +2024,26 @@ export interface FormatOptions {
   includeScore?: boolean;
   /** Truncate each passage to this character limit before formatting. */
   maxCharsPerPassage?: number;
-  /** Custom template string; use `{{content}}` and `{{source}}` placeholders. */
+  /** Custom template string; use `{{content}}`, `{{source}}` and `{{notes}}` placeholders. */
   template?: string;
   /** Separator between passages. Default: '\n---\n'. */
   separator?: string;
+  /** Include the status notes of each passage (validity, relations). Default: true. */
+  includeNotes?: boolean;
+  /** Renders a status note; default: the note's English `text`. */
+  noteText?: (note: PassageNote) => string;
+  /** Label of the notes line. Default: `'Status'`. */
+  notesLabel?: string;
+}
+
+/** Texts of {@link buildContextGuidance}; each overrides the English default. */
+export interface ContextGuidanceTexts {
+  /** Heading followed by the labels of the missing documents. */
+  missingHeading: string;
+  /** Instruction after the missing documents. */
+  missingInstruction: string;
+  /** Instruction when passages carry status notes. */
+  statusInstruction: string;
 }
 
 /**

@@ -19,6 +19,13 @@ export interface ReferenceExtractorOptions {
   builtin?: boolean;
   /** Additional patterns. */
   patterns?: ReferencePattern[];
+  /**
+   * Heuristic for {@link ReferenceExtractor.identify}: a title that starts with
+   * a number followed by the word annex/appendix and no identifier of its own
+   * ("30 - ANEXO - Formularios") identifies `annex:30`. Useful for collections whose
+   * annexes are numbered in the file name; off by default.
+   */
+  numberedTitles?: boolean;
 }
 
 /** A reference found in a text. */
@@ -157,8 +164,10 @@ function normaliseId(raw: string, mode: 'roman' | 'law' | 'decree' | 'plain'): s
  */
 export class ReferenceExtractor {
   readonly #patterns: { kind: string; re: RegExp; id: 'roman' | 'law' | 'decree' | 'plain' }[];
+  readonly #numberedTitles: boolean;
 
   constructor(options: ReferenceExtractorOptions = {}) {
+    this.#numberedTitles = options.numberedTitles === true;
     this.#patterns = [
       ...(options.builtin === false ? [] : BUILTIN),
       ...(options.patterns ?? []).map((p) => ({
@@ -201,8 +210,9 @@ export class ReferenceExtractor {
   /**
    * The identity keys of a document: the references in its title (e.g.
    * "2 - ANEXO II - Decreto 120-15.pdf" → `annex:2`, `decree:120/15`). When
-   * the title has none: a numbered annex title ("30 - ANEXO - Formularios") gives
-   * `annex:30`; otherwise the beginning of its text (its heading) is used.
+   * the title has none: with `numberedTitles`, a numbered annex title
+   * ("30 - ANEXO - Formularios") gives `annex:30`; otherwise the beginning of its
+   * text (its heading) is used.
    *
    * @param title - Document title or file name.
    * @param text  - Optional document text; only its first 300 characters are read.
@@ -213,10 +223,11 @@ export class ReferenceExtractor {
     if (fromTitle.length > 0) return fromTitle.map((r) => r.key);
     // "30 - ANEXO - Formularios": a numbered title whose annex has no identifier of its own.
     const numbered =
+      this.#numberedTitles &&
       /^\s*(\d{1,4})\s*[a-z]?\s*[-–—.]\s*(?:anexo|annex|appendix|ap[ée]ndice|apêndice)\b/iu.exec(
         clean,
       );
-    if (numbered !== null) return [`annex:${Number(numbered[1])}`];
+    if (numbered !== false && numbered !== null) return [`annex:${Number(numbered[1])}`];
     if (text === undefined) return [];
     return this.extract(text.slice(0, 300)).map((r) => r.key);
   }

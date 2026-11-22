@@ -48,6 +48,11 @@ export interface IngestionPipelineOptions {
   defaultEmbeddingProvider?: string;
   /** Default collection configuration used when auto-creating collections. */
   defaultCollectionConfig?: Partial<CollectionConfig>;
+  /**
+   * Extra tags for a document, computed from its title and text and added to
+   * every chunk (identity keys and stated relations, `rag.references.tagDocuments`).
+   */
+  tagDocument?: (doc: { title?: string; text: string }) => string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +140,14 @@ export class IngestionPipeline {
       ...rawDoc.metadata,
       ...options.metadata,
     };
+
+    const extraTags = this.#options.tagDocument?.({
+      ...(rawDoc.metadata.title !== undefined && { title: rawDoc.metadata.title }),
+      text: rawDoc.content,
+    });
+    if (extraTags !== undefined && extraTags.length > 0) {
+      rawDoc.metadata.tags = [...new Set([...(rawDoc.metadata.tags ?? []), ...extraTags])];
+    }
 
     // Assign documentId if not already set
     if (!rawDoc.metadata.documentId) {

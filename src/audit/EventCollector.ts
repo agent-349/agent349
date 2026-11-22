@@ -304,6 +304,23 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     };
   },
 
+  'rag.status.end': (data) => ({
+    category: 'rag',
+    action: 'status',
+    outcome: 'success',
+    severity: 'info',
+    detail: {
+      summary: `RAG validity/relations: ${data.notes as number} document(s) with notes, ${data.excluded as number} passage(s) excluded, ${data.followed as number} related document(s) searched, ${data.added as number} passage(s) added`,
+      output: {
+        notes: data.notes,
+        excluded: data.excluded,
+        followed: data.followed,
+        added: data.added,
+      },
+    },
+    metrics: { durationMs: data.latencyMs as number },
+  }),
+
   'rag.references.end': (data) => ({
     category: 'rag',
     action: 'references',

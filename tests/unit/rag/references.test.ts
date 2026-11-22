@@ -44,7 +44,10 @@ describe('ReferenceExtractor', () => {
     expect(x.identify('2 - ANEXO II - Decreto 120-15.pdf')).toEqual(['annex:2', 'decree:120/15']);
     expect(x.identify('14 A - ANEXO XIV - Envío de Documentación.pdf')).toEqual(['annex:14']);
     expect(x.identify('Reglamento Interno 2025.pdf')).toEqual([]);
-    expect(x.identify('30 - ANEXO - Formularios.pdf')).toEqual(['annex:30']);
+    expect(x.identify('30 - ANEXO - Formularios.pdf')).toEqual([]);
+    expect(
+      new ReferenceExtractor({ numberedTitles: true }).identify('30 - ANEXO - Formularios.pdf'),
+    ).toEqual(['annex:30']);
     expect(x.identify('Reglamento.pdf', 'ANEXO XXX - Formularios ...')).toEqual(['annex:30']);
   });
 
@@ -167,8 +170,12 @@ async function setup(scores: Record<string, number>, refs: { maxTargets?: number
     const map: Record<string, string[]> = { 'annex:14': ['anexo14', 'secreto'] };
     return Object.fromEntries(keys.map((k) => [k, map[k] ?? []]));
   });
+  stores.set(pipeline, store);
   return { pipeline, resolve, provider, bus };
 }
+
+const stores = new WeakMap<RAGPipeline, InMemoryVectorStore>();
+const storeOf = (pipeline: RAGPipeline): InMemoryVectorStore => stores.get(pipeline)!;
 
 const search = (pipeline: RAGPipeline, resolve: unknown, extra: Record<string, unknown> = {}) =>
   pipeline.search(
@@ -214,12 +221,11 @@ describe('RAGPipeline — references', () => {
     expect(provider.calls).toBe(1); // the cited document is searched with the same query vector
   });
 
-  it('does nothing when off, without a resolver, or when the context is empty', async () => {
+  it('does nothing when off or when the context is empty', async () => {
     const { pipeline, resolve } = await setup({ 'reg-1': 0.9, 'anx14-1': 0.8 });
     expect(
       (await search(pipeline, resolve, { references: 'off' })).trace.references,
     ).toBeUndefined();
-    expect((await search(pipeline, undefined)).trace.references).toBeUndefined();
     const empty = await setup({ 'reg-1': 0.1 });
     expect((await search(empty.pipeline, empty.resolve)).trace.references).toBeUndefined();
   });
@@ -237,6 +243,25 @@ describe('RAGPipeline — references', () => {
     const resolve = vi.fn(async () => ({ 'annex:14': ['anexo14'], 'annex:33': ['otro'] }));
     const result = await search(pipeline, resolve);
     expect(result.trace.references?.followed.map((f) => f.targets)).toEqual([['anexo14']]);
+  });
+
+  it('without a host resolver, resolves through the identity tags written at ingestion', async () => {
+    const { pipeline } = await setup({ 'reg-1': 0.9, 'anx14-1': 0.8, 'anx14-2': 0.2 });
+    // No tags yet: everything cited is missing.
+    let result = await search(pipeline, undefined);
+    expect(result.trace.references?.missing.map((m) => m.key)).toEqual(['annex:14', 'annex:33']);
+    // Tag the Anexo XIV as ingestion would.
+    const store = storeOf(pipeline);
+    await store.updateDocumentsMetadata(
+      'docs',
+      { documentId: 'anexo14' },
+      {
+        tags: ['cat:anexos', 'ref:annex:14'],
+      },
+    );
+    result = await search(pipeline, undefined);
+    expect(result.passages.map((p) => p.id)).toEqual(['reg-1', 'anx14-1']);
+    expect(result.trace.references?.missing.map((m) => m.key)).toEqual(['annex:33']);
   });
 
   it('the RAG tool passes the host resolver', async () => {

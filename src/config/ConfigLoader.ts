@@ -705,6 +705,53 @@ export interface SDKConfig {
       builtin?: boolean;
       /** Additional patterns: `{ kind, pattern }`, one capture group for the identifier. */
       patterns?: { kind: string; pattern: string }[];
+      /**
+       * A title like "30 - ANEXO - Formularios" (number, then annex/appendix, no
+       * identifier of its own) identifies `annex:30`. Default: false.
+       */
+      numberedTitles?: boolean;
+      /**
+       * Tag the chunks at ingestion with the document's identity keys
+       * (`ref:<key>`) and stated relations (`rel:<type>:<key>`), so that
+       * references and relations work without a host resolver. Default: true
+       * when `mode` is `'follow'` or `rag.relations.mode` is `'on'`. A host
+       * that rewrites chunk tags must keep these.
+       */
+      tagDocuments?: boolean;
+    };
+    /**
+     * Relations between documents (repeals, amendments, regulations): when a
+     * document in the context is repealed, amended or regulated by another,
+     * that one is searched too and the passages carry status notes. Relations
+     * come from `RAGQuery.describeDocuments` (host-reviewed) or from the
+     * wording of the documents, tagged at ingestion. Off by default.
+     */
+    relations?: {
+      /** `'off'` (default) or `'on'`. `RAGQuery.relations` overrides it. */
+      mode?: 'off' | 'on';
+      /** Most related documents searched per query. Default: 3. */
+      maxSources?: number;
+      /** Passages searched per related document. Default: 3. */
+      perSource?: number;
+      /** Built-in operative verbs (es/en/pt). Default: true. */
+      builtin?: boolean;
+      /** Additional verbs: `{ type, pattern }`. */
+      patterns?: { type: 'derogates' | 'modifies' | 'regulates'; pattern: string }[];
+    };
+    /**
+     * Validity, version and priority of documents (`RAGQuery.describeDocuments`
+     * or `metadata.custom.validFrom|validTo|version|priority`). Off by default.
+     */
+    validity?: {
+      /** `'off'` (default) or `'on'`. `RAGQuery.validity` overrides it. */
+      mode?: 'off' | 'on';
+      /**
+       * Expired documents and confirmed total repeals: `'flag'` (default; the
+       * passage stays, with a note) or `'exclude'`. Proposed relations never exclude.
+       */
+      inactive?: 'flag' | 'exclude';
+      /** Score added (high) or subtracted (low) for priority when ranking. Default: 0.1. */
+      priorityWeight?: number;
     };
     /**
      * OCR of scanned documents at ingestion: PDF pages without a text layer
@@ -1251,6 +1298,49 @@ function validate(cfg: SDKConfig): void {
           'rag.references.patterns',
         );
       }
+    }
+  }
+  const rel = cfg.rag.relations;
+  if (rel !== undefined) {
+    if (rel.mode !== undefined && rel.mode !== 'off' && rel.mode !== 'on') {
+      throw new ConfigError("rag.relations.mode must be 'off' or 'on'", 'rag.relations.mode');
+    }
+    for (const p of rel.patterns ?? []) {
+      if (!['derogates', 'modifies', 'regulates'].includes(p.type)) {
+        throw new ConfigError(
+          "rag.relations.patterns: type must be 'derogates', 'modifies' or 'regulates'",
+          'rag.relations.patterns',
+        );
+      }
+      try {
+        new RegExp(p.pattern, 'u');
+      } catch (err) {
+        throw new ConfigError(
+          `rag.relations.patterns: invalid pattern for '${p.type}': ${err instanceof Error ? err.message : String(err)}`,
+          'rag.relations.patterns',
+        );
+      }
+    }
+  }
+  const val = cfg.rag.validity;
+  if (val !== undefined) {
+    if (val.mode !== undefined && val.mode !== 'off' && val.mode !== 'on') {
+      throw new ConfigError("rag.validity.mode must be 'off' or 'on'", 'rag.validity.mode');
+    }
+    if (val.inactive !== undefined && val.inactive !== 'flag' && val.inactive !== 'exclude') {
+      throw new ConfigError(
+        "rag.validity.inactive must be 'flag' or 'exclude'",
+        'rag.validity.inactive',
+      );
+    }
+    if (
+      val.priorityWeight !== undefined &&
+      (typeof val.priorityWeight !== 'number' || val.priorityWeight < 0 || val.priorityWeight > 1)
+    ) {
+      throw new ConfigError(
+        'rag.validity.priorityWeight must be a number between 0 and 1',
+        'rag.validity.priorityWeight',
+      );
     }
   }
   const lx = cfg.rag.lexicon;

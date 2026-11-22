@@ -83,7 +83,40 @@ series, incompatible behavior changes bump the minor version.
   the re-ranker and `minScore` joins the result. `trace.references` lists the
   references followed and the cited documents missing from the collection;
   `metrics.referencesLatencyMs`; audited as `rag.references.end`.
-  `ReferenceExtractor.identify(title)` gives a document's identity keys.
+  `ReferenceExtractor.identify(title)` gives a document's identity keys
+  (`numberedTitles: true` adds the "30 - ANEXO - …" title heuristic, off by
+  default). Without a host resolver, references resolve through the chunk tags
+  written at ingestion (`ref:<key>`; `rag.references.tagDocuments`, default on
+  when references or relations are on).
+
+- **Relations between documents.** `RelationExtractor` finds what a document
+  does to others from its operative wording — repeals (`derogates`, total or
+  partial, with articles), amendments (`modifies`) and regulations
+  (`regulates`) in es/en/pt, plus custom verbs — as proposals marked
+  `explicit` or `inferred`. `rag.relations` (`mode: 'off' | 'on'`,
+  `maxSources`, `perSource`): when a document in the context is repealed,
+  amended or regulated by another, that one is searched with the same question
+  and joins the result if it passes the re-ranker and `minScore`. Relations
+  come from the host (`RAGQuery.describeDocuments`, with `proposed` /
+  `confirmed` status) or from `rel:<type>:<key>` tags written at ingestion.
+
+- **Document validity, version and priority.** `rag.validity` (`mode`,
+  `inactive: 'flag' | 'exclude'`, `priorityWeight`): expired documents and
+  confirmed total repeals are flagged (or excluded, which never applies to
+  proposed relations), `high`/`low` priority shifts the ranking before the
+  final cut. From `RAGQuery.describeDocuments` (read at query time: editing it
+  needs no re-indexing) or `metadata.custom.validFrom|validTo|version|priority`.
+  Passages carry `notes` (`PassageNote`), `formatForContext` writes them as a
+  `Status:` line (`includeNotes`, `noteText`, `notesLabel`), `trace.status`
+  lists notes, exclusions and related documents searched;
+  `metrics.statusLatencyMs`; audited as `rag.status.end`.
+
+- **`buildContextGuidance(result, texts?)`.** Instructions for the synthesis:
+  the cited documents missing from the collection and how to treat status
+  notes (repealed, amended, unconfirmed, discrepancies between versions).
+  `createRAGTool` appends it to its context (`guidance`, default on) and takes
+  `status` (`describeDocuments`, per-search modes) and `format` (options of
+  `formatForContext`, e.g. `noteText` in the host's language).
 
 - **OCR of scanned documents.** `OcrService` extracts the text of PDFs and
   images off the host's event loop: a worker thread reads the text layer of

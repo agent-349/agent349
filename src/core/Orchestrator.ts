@@ -128,6 +128,8 @@ import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { StopWords, parseGlossary } from '../rag/lexicon/Lexicon.js';
 import { ReferenceExtractor } from '../rag/references/ReferenceExtractor.js';
+import { RelationExtractor } from '../rag/references/RelationExtractor.js';
+import { documentTags } from '../rag/references/documentTags.js';
 import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
 import type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
@@ -2423,6 +2425,14 @@ export class Orchestrator {
     const reranker = this.#rerankerOverride ?? this.#buildReranker(ragCfg.reranker);
     const queryRewriter = this.#buildQueryRewriter(ragCfg.queryRewriting);
 
+    const referenceExtractor = new ReferenceExtractor({
+      ...(ragCfg.references?.builtin !== undefined && { builtin: ragCfg.references.builtin }),
+      ...(ragCfg.references?.patterns !== undefined && { patterns: ragCfg.references.patterns }),
+      ...(ragCfg.references?.numberedTitles !== undefined && {
+        numberedTitles: ragCfg.references.numberedTitles,
+      }),
+    });
+
     const ragPipeline = new RAGPipeline(
       embeddingRouter,
       vectorStore,
@@ -2442,15 +2452,41 @@ export class Orchestrator {
           ...(ragCfg.references?.perTarget !== undefined && {
             perTarget: ragCfg.references.perTarget,
           }),
-          extractor: new ReferenceExtractor({
-            ...(ragCfg.references?.builtin !== undefined && { builtin: ragCfg.references.builtin }),
-            ...(ragCfg.references?.patterns !== undefined && {
-              patterns: ragCfg.references.patterns,
-            }),
+          extractor: referenceExtractor,
+        },
+        relations: {
+          mode: ragCfg.relations?.mode ?? 'off',
+          ...(ragCfg.relations?.maxSources !== undefined && {
+            maxSources: ragCfg.relations.maxSources,
+          }),
+          ...(ragCfg.relations?.perSource !== undefined && {
+            perSource: ragCfg.relations.perSource,
+          }),
+        },
+        validity: {
+          mode: ragCfg.validity?.mode ?? 'off',
+          ...(ragCfg.validity?.inactive !== undefined && { inactive: ragCfg.validity.inactive }),
+          ...(ragCfg.validity?.priorityWeight !== undefined && {
+            priorityWeight: ragCfg.validity.priorityWeight,
           }),
         },
       },
     );
+
+    // Identity keys (`ref:`) and stated relations (`rel:`) as chunk tags, so
+    // references and relations work without a host resolver.
+    const tagDocuments =
+      ragCfg.references?.tagDocuments ??
+      (ragCfg.references?.mode === 'follow' || ragCfg.relations?.mode === 'on');
+    const relationExtractor = new RelationExtractor({
+      references: referenceExtractor,
+      ...(ragCfg.relations?.builtin !== undefined && { builtin: ragCfg.relations.builtin }),
+      ...(ragCfg.relations?.patterns !== undefined && { patterns: ragCfg.relations.patterns }),
+    });
+    const tagDocument = tagDocuments
+      ? (doc: { title?: string; text: string }): string[] =>
+          documentTags(referenceExtractor, relationExtractor, doc.title ?? '', doc.text)
+      : undefined;
 
     const loaderRegistry = new DocumentLoaderRegistry();
     loaderRegistry.register(new PlainTextLoader());
@@ -2476,6 +2512,7 @@ export class Orchestrator {
           dimensions: ragCfg.embedding.defaultDimensions,
           distanceMetric: 'cosine',
         },
+        ...(tagDocument !== undefined && { tagDocument }),
       },
     );
 

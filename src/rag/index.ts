@@ -58,6 +58,14 @@ export type {
   ReferencePattern,
   ExtractedReference,
 } from './references/ReferenceExtractor.js';
+export { RelationExtractor } from './references/RelationExtractor.js';
+export type {
+  RelationExtractorOptions,
+  RelationPattern,
+  RelationType,
+  ExtractedRelation,
+} from './references/RelationExtractor.js';
+export { documentTags, REF_TAG, REL_TAG } from './references/documentTags.js';
 export type { VisionRecognizerOptions } from './ocr/visionRecognizer.js';
 export {
   StopWords,
@@ -75,11 +83,13 @@ export type {
   QueryExpansionOutcome,
 } from './queryRewriting/QueryExpander.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
-export { RAGPipeline } from './RAGPipeline.js';
+export { RAGPipeline, buildContextGuidance, notesFor, inactiveReason } from './RAGPipeline.js';
 export type {
   RAGPipelineExpansionOptions,
   RAGPipelineLexiconOptions,
   RAGPipelineReferenceOptions,
+  RAGPipelineRelationOptions,
+  RAGPipelineValidityOptions,
 } from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';

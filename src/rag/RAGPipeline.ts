@@ -16,6 +16,11 @@ import type {
   QueryRewriterValidation,
   RAGTrace,
   RAGTraceCandidate,
+  DocumentStatus,
+  DocumentRelationType,
+  PassageNote,
+  ReferenceResolver,
+  ContextGuidanceTexts,
 } from '../types/index.js';
 import type { EmbeddingRouter } from './embedding/EmbeddingRouter.js';
 import type { VectorStoreAdapter } from './vectorstore/VectorStoreAdapter.js';
@@ -28,6 +33,7 @@ import { fuseRankedLists } from './fusion/RRF.js';
 import type { GlossaryEntry, GlossaryParseResult, StopWords } from './lexicon/Lexicon.js';
 import { matchGlossaryTerms, mergeGlossaries } from './lexicon/Lexicon.js';
 import type { ReferenceExtractor } from './references/ReferenceExtractor.js';
+import { REF_TAG, REL_TAG } from './references/documentTags.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -94,6 +100,8 @@ export class RAGPipeline {
   readonly #references: Required<Omit<RAGPipelineReferenceOptions, 'extractor'>> & {
     extractor?: ReferenceExtractor;
   };
+  readonly #relations: Required<RAGPipelineRelationOptions>;
+  readonly #validity: Required<RAGPipelineValidityOptions>;
   readonly #expansion: Required<Omit<RAGPipelineExpansionOptions, 'fallbackBelow'>> &
     Pick<RAGPipelineExpansionOptions, 'fallbackBelow'>;
 
@@ -126,6 +134,8 @@ export class RAGPipeline {
       expansion?: RAGPipelineExpansionOptions;
       lexicon?: RAGPipelineLexiconOptions;
       references?: RAGPipelineReferenceOptions;
+      relations?: RAGPipelineRelationOptions;
+      validity?: RAGPipelineValidityOptions;
     } = {},
   ) {
     this.#embedding = embeddingRouter;
@@ -149,6 +159,16 @@ export class RAGPipeline {
       ...(options.references?.extractor !== undefined && {
         extractor: options.references.extractor,
       }),
+    };
+    this.#relations = {
+      mode: options.relations?.mode ?? 'off',
+      maxSources: Math.max(1, options.relations?.maxSources ?? 3),
+      perSource: Math.max(1, options.relations?.perSource ?? 3),
+    };
+    this.#validity = {
+      mode: options.validity?.mode ?? 'off',
+      inactive: options.validity?.inactive ?? 'flag',
+      priorityWeight: Math.min(1, Math.max(0, options.validity?.priorityWeight ?? 0.1)),
     };
     this.#expansion = {
       mode: options.expansion?.mode ?? 'off',
@@ -636,6 +656,66 @@ export class RAGPipeline {
       }
     }
 
+    // ── 4c. VALIDITY AND PRIORITY (optional) ───────────────────────────────
+    // Before the final cut, so that an excluded (inactive) passage leaves room
+    // for the next one and priority can change what makes the cut.
+    const relationMode = ragQuery.relations ?? this.#relations.mode;
+    const validityMode = ragQuery.validity ?? this.#validity.mode;
+    const statusOn = relationMode === 'on' || validityMode === 'on';
+    const statuses = new Map<string, DocumentStatus>();
+    const statusParams: RetrieveParams = { ...retrieveParams, filters: securityFilters(filters) };
+    const describe = async (passages: Passage[]): Promise<void> => {
+      const unknown = [
+        ...new Set(passages.map((p) => p.metadata.documentId).filter((d) => !statuses.has(d))),
+      ];
+      if (unknown.length === 0) return;
+      const found =
+        ragQuery.describeDocuments !== undefined
+          ? await ragQuery.describeDocuments(unknown)
+          : await this.#describeFromIndex(
+              query,
+              passages.filter((p) => unknown.includes(p.metadata.documentId)),
+              relationMode === 'on',
+              statusParams,
+              retrieval.vector,
+              context,
+              emit,
+            );
+      for (const id of unknown) statuses.set(id, found[id] ?? {});
+    };
+    const excluded: NonNullable<RAGTrace['status']>['excluded'] = [];
+    const excludedPassages: Passage[] = [];
+    let statusLatencyMs = 0;
+    if (statusOn && ranking.rankedAll.length > 0) {
+      const t0 = Date.now();
+      await describe(ranking.rankedAll);
+      let rankedAll = ranking.rankedAll;
+      if (validityMode === 'on' && this.#validity.inactive === 'exclude') {
+        rankedAll = rankedAll.filter((p) => {
+          const reason = inactiveReason(statuses.get(p.metadata.documentId));
+          if (reason === undefined) return true;
+          excluded.push({ id: p.id, documentId: p.metadata.documentId, reason });
+          excludedPassages.push(p);
+          return false;
+        });
+      }
+      const w = this.#validity.priorityWeight;
+      if (validityMode === 'on' && w > 0) {
+        const bonus = (p: Passage): number => {
+          const prio = statuses.get(p.metadata.documentId)?.priority;
+          return prio === 'high' ? w : prio === 'low' ? -w : 0;
+        };
+        rankedAll = rankedAll
+          .map((p, i) => ({ p, i, s: p.score + bonus(p) }))
+          .sort((a, b) => b.s - a.s || a.i - b.i)
+          .map((x) => x.p);
+      }
+      if (rankedAll !== ranking.rankedAll) {
+        ranking = { ...ranking, rankedAll, finalPassages: rankedAll.slice(0, finalTopK) };
+      }
+      statusLatencyMs += Date.now() - t0;
+    }
+
     // ── 5. FILTER BY minScore ────────────────────────────────────────────────
     let finalPassages = ranking.finalPassages;
     const beforeMinScore = finalPassages.length;
@@ -653,15 +733,18 @@ export class RAGPipeline {
     const referenceMode = ragQuery.references ?? this.#references.mode;
     if (
       referenceMode === 'follow' &&
-      ragQuery.resolveReferences !== undefined &&
       this.#references.extractor !== undefined &&
       finalPassages.length > 0
     ) {
       const refStart = Date.now();
+      // Without a host resolver, the identity tags written at ingestion (`ref:<key>`).
+      const resolver =
+        ragQuery.resolveReferences ??
+        this.#tagResolver(query, statusParams, retrieval.vector, context, emit);
       const followed = await this.#followReferences(
         query,
         finalPassages,
-        ragQuery.resolveReferences,
+        resolver,
         this.#references.extractor,
         { ...retrieveParams, filters: securityFilters(filters) },
         retrieval.vector,
@@ -680,6 +763,104 @@ export class RAGPipeline {
       });
     }
 
+    // ── 7. RELATIONS AND STATUS NOTES (optional) ─────────────────────────────
+    // Documents that repeal, amend or regulate those in the context are
+    // searched with the same question; every passage gets its status notes.
+    let status: RAGTrace['status'];
+    if (statusOn && (finalPassages.length > 0 || excludedPassages.length > 0)) {
+      const t0 = Date.now();
+      await describe(finalPassages);
+      const followedRelations: NonNullable<RAGTrace['status']>['followed'] = [];
+      const sourceNotes = new Map<string, PassageNote[]>();
+      if (relationMode === 'on') {
+        const inContext = new Set(finalPassages.map((p) => p.metadata.documentId));
+        const plan: {
+          type: DocumentRelationType;
+          status: 'proposed' | 'confirmed';
+          from: string;
+          to: Passage;
+        }[] = [];
+        const planned = new Set<string>();
+        // An excluded (repealed) document still leads to the one that replaces it.
+        const excludedDocs = new Map<string, Passage>();
+        for (const p of excludedPassages) {
+          if (!excludedDocs.has(p.metadata.documentId)) excludedDocs.set(p.metadata.documentId, p);
+        }
+        for (const p of [...finalPassages, ...excludedDocs.values()]) {
+          for (const r of statuses.get(p.metadata.documentId)?.incoming ?? []) {
+            if (inContext.has(r.fromDocumentId) || planned.has(r.fromDocumentId)) continue;
+            if (planned.size >= this.#relations.maxSources) break;
+            planned.add(r.fromDocumentId);
+            plan.push({ type: r.type, status: r.status, from: r.fromDocumentId, to: p });
+          }
+        }
+        if (plan.length > 0) {
+          const added = await this.#searchDocuments(
+            query,
+            plan.map((x) => [x.from]),
+            this.#relations.perSource,
+            statusParams,
+            retrieval.vector,
+            { finalTopK, rerank, rerankPolicy, minScore },
+            new Set(finalPassages.map((p) => p.id)),
+            context,
+            emit,
+          );
+          plan.forEach((x, i) => {
+            const got = added[i] ?? [];
+            followedRelations.push({
+              type: x.type,
+              status: x.status,
+              fromDocumentId: x.from,
+              toDocumentId: x.to.metadata.documentId,
+              added: got.map(passageRef),
+            });
+            const label = x.to.metadata.title ?? x.to.metadata.documentId;
+            const rel = (statuses.get(x.to.metadata.documentId)?.incoming ?? []).find(
+              (r) => r.fromDocumentId === x.from,
+            );
+            const note: PassageNote = {
+              kind: 'relation_source',
+              relation: x.type,
+              status: x.status,
+              documentId: x.to.metadata.documentId,
+              label,
+              ...(rel?.articles !== undefined && { articles: rel.articles }),
+              text: sourceNoteText(x.type, x.status, label, rel?.articles),
+            };
+            for (const p of got) sourceNotes.set(p.id, [note]);
+          });
+          finalPassages = [...finalPassages, ...added.flat()];
+          await describe(finalPassages);
+        }
+      }
+      const kindsByDoc = new Map<string, Set<PassageNote['kind']>>();
+      finalPassages = finalPassages.map((p) => {
+        const notes = [
+          ...(sourceNotes.get(p.id) ?? []),
+          ...notesFor(statuses.get(p.metadata.documentId), validityMode === 'on'),
+        ];
+        if (notes.length === 0) return p;
+        const kinds = kindsByDoc.get(p.metadata.documentId) ?? new Set();
+        notes.forEach((n) => kinds.add(n.kind));
+        kindsByDoc.set(p.metadata.documentId, kinds);
+        return { ...p, notes };
+      });
+      status = {
+        notes: [...kindsByDoc].map(([documentId, kinds]) => ({ documentId, kinds: [...kinds] })),
+        excluded,
+        followed: followedRelations,
+      };
+      statusLatencyMs += Date.now() - t0;
+      emit('rag.status.end', {
+        latencyMs: statusLatencyMs,
+        excluded: excluded.length,
+        followed: followedRelations.length,
+        added: followedRelations.reduce((n, f) => n + f.added.length, 0),
+        notes: status.notes.length,
+      });
+    }
+
     const trace = buildTrace({
       originalQuery: rawQuery,
       searchQuery: query,
@@ -690,6 +871,7 @@ export class RAGPipeline {
       ...(expansion !== undefined && { expansion }),
       ...(lexicon !== undefined && { lexicon }),
       ...(references !== undefined && { references }),
+      ...(status !== undefined && { status }),
       candidateCount: candidates.length,
       retrievalScores,
       ...(foundBy !== undefined && { foundBy }),
@@ -709,6 +891,7 @@ export class RAGPipeline {
       ...(queryRewriteLatencyMs !== undefined && { queryRewriteLatencyMs }),
       ...(expansionLatencyMs !== undefined && { expansionLatencyMs }),
       ...(referencesLatencyMs !== undefined && { referencesLatencyMs }),
+      ...(statusOn && { statusLatencyMs }),
       ...(rerankLatencyMs !== undefined && { rerankLatencyMs }),
       ...(rerankTokens !== undefined && { tokensUsed: llmTokens + embeddingTokens }),
     };
@@ -913,42 +1096,17 @@ export class RAGPipeline {
     if (plan.length === 0) return { trace: out, added: [] };
 
     // Same question and vector, restricted to each cited document.
-    const found = await Promise.all(
-      plan.map((item) =>
-        this.#retrieve(
-          query,
-          {
-            ...params,
-            topK: this.#references.perTarget,
-            filters: { ...params.filters, documentId: item.targets },
-          },
-          context,
-          emit,
-          vector,
-        ),
-      ),
+    const perItem = await this.#searchDocuments(
+      query,
+      plan.map((item) => item.targets),
+      this.#references.perTarget,
+      params,
+      vector,
+      rank,
+      new Set(passages.map((p) => p.id)),
+      context,
+      emit,
     );
-    const seen = new Set(passages.map((p) => p.id));
-    const fresh: { passage: Passage; item: number }[] = [];
-    found.forEach((r, item) => {
-      for (const p of r.merged) {
-        if (seen.has(p.id)) continue;
-        seen.add(p.id);
-        fresh.push({ passage: p, item });
-      }
-    });
-    const ranked =
-      fresh.length > 0
-        ? await this.#rank(
-            query,
-            fresh.map((f) => f.passage),
-            { ...rank, finalTopK: fresh.length },
-            context,
-            emit,
-          )
-        : { rankedAll: [] as Passage[], finalPassages: [] as Passage[], reranked: false };
-    const byId = new Map(fresh.map((f) => [f.passage.id, f.item]));
-    const added = ranked.rankedAll.filter((p) => rank.minScore <= 0 || p.score >= rank.minScore);
     plan.forEach((item, index) => {
       out.followed.push({
         key: item.key,
@@ -956,17 +1114,166 @@ export class RAGPipeline {
         fromPassageId: item.from.id,
         fromDocumentId: item.from.metadata.documentId,
         targets: item.targets,
-        added: added
-          .filter((p) => byId.get(p.id) === index)
-          .map((p) => ({
-            id: p.id,
-            documentId: p.metadata.documentId,
-            ...(p.metadata.chunkIndex !== undefined && { chunkIndex: p.metadata.chunkIndex }),
-            score: p.score,
-          })),
+        added: (perItem[index] ?? []).map(passageRef),
       });
     });
+    const added = perItem.flat();
     return { trace: out, added };
+  }
+
+  /**
+   * Searches each group of documents with the same question and vector,
+   * re-ranks the new passages together and keeps those reaching `minScore`.
+   * Returns the passages kept for each group, best first.
+   */
+  async #searchDocuments(
+    query: string,
+    groups: string[][],
+    perGroup: number,
+    params: RetrieveParams,
+    vector: number[],
+    rank: RankParams & { minScore: number },
+    seen: Set<string>,
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<Passage[][]> {
+    const found = await Promise.all(
+      groups.map((documentIds) =>
+        this.#retrieve(
+          query,
+          { ...params, topK: perGroup, filters: { ...params.filters, documentId: documentIds } },
+          context,
+          emit,
+          vector,
+        ),
+      ),
+    );
+    const fresh: { passage: Passage; group: number }[] = [];
+    found.forEach((r, group) => {
+      for (const p of r.merged) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        fresh.push({ passage: p, group });
+      }
+    });
+    if (fresh.length === 0) return groups.map(() => []);
+    const ranked = await this.#rank(
+      query,
+      fresh.map((f) => f.passage),
+      { ...rank, finalTopK: fresh.length },
+      context,
+      emit,
+    );
+    const groupOf = new Map(fresh.map((f) => [f.passage.id, f.group]));
+    const kept = ranked.rankedAll.filter((p) => rank.minScore <= 0 || p.score >= rank.minScore);
+    return groups.map((_, g) => kept.filter((p) => groupOf.get(p.id) === g));
+  }
+
+  /**
+   * Resolver built on the identity tags written at ingestion (`ref:<key>`):
+   * one filtered search per key (no embedding), up to `maxTargets` documents each.
+   */
+  #tagResolver(
+    query: string,
+    params: RetrieveParams,
+    vector: number[],
+    context: ExecutionContext,
+    emit: Emit,
+  ): ReferenceResolver {
+    return async (keys) => {
+      const take = keys.slice(0, MAX_TAG_LOOKUPS);
+      const found = await Promise.all(
+        take.map((key) =>
+          this.#retrieve(
+            query,
+            {
+              ...params,
+              topK: this.#references.maxTargets,
+              filters: { ...params.filters, tags: [`${REF_TAG}${key}`] },
+            },
+            context,
+            emit,
+            vector,
+          ),
+        ),
+      );
+      const out: Record<string, string[]> = {};
+      take.forEach((key, i) => {
+        out[key] = [...new Set(found[i]!.merged.map((p) => p.metadata.documentId))];
+      });
+      return out;
+    };
+  }
+
+  /**
+   * Status of documents from the index itself, for hosts without
+   * `describeDocuments`: validity from `metadata.custom`, and relations from
+   * the tags written at ingestion — documents tagged `rel:<type>:<key>` for a
+   * key that identifies one of `passages`' documents. Relations found this way
+   * are proposals.
+   */
+  async #describeFromIndex(
+    query: string,
+    passages: Passage[],
+    withRelations: boolean,
+    params: RetrieveParams,
+    vector: number[],
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<Record<string, DocumentStatus>> {
+    const out: Record<string, DocumentStatus> = {};
+    const keysByDoc = new Map<string, string[]>();
+    for (const p of passages) {
+      const id = p.metadata.documentId;
+      if (out[id] === undefined) out[id] = statusFromMetadata(p.metadata.custom);
+      if (!keysByDoc.has(id)) {
+        keysByDoc.set(
+          id,
+          (p.metadata.tags ?? [])
+            .filter((t) => t.startsWith(REF_TAG))
+            .map((t) => t.slice(REF_TAG.length)),
+        );
+      }
+    }
+    if (!withRelations) return out;
+    const tags = [...new Set([...keysByDoc.values()].flat())].flatMap((k) =>
+      RELATION_TYPES.map((t) => `${REL_TAG}${t}:${k}`),
+    );
+    if (tags.length === 0) return out;
+    const found = await this.#retrieve(
+      query,
+      {
+        ...params,
+        topK: this.#relations.maxSources * this.#relations.perSource * 2,
+        filters: { ...params.filters, tags },
+      },
+      context,
+      emit,
+      vector,
+    );
+    for (const [docId, keys] of keysByDoc) {
+      const incoming = new Map<string, NonNullable<DocumentStatus['incoming']>[number]>();
+      for (const p of found.merged) {
+        const from = p.metadata.documentId;
+        if (from === docId) continue;
+        for (const t of p.metadata.tags ?? []) {
+          if (!t.startsWith(REL_TAG)) continue;
+          const [type, ...rest] = t.slice(REL_TAG.length).split(':');
+          if (!keys.includes(rest.join(':'))) continue;
+          const id = `${from}|${type}`;
+          if (!incoming.has(id)) {
+            incoming.set(id, {
+              type: type as DocumentRelationType,
+              fromDocumentId: from,
+              ...(p.metadata.title !== undefined && { fromLabel: p.metadata.title }),
+              status: 'proposed',
+            });
+          }
+        }
+      }
+      if (incoming.size > 0) out[docId] = { ...out[docId], incoming: [...incoming.values()] };
+    }
+    return out;
   }
 
   /** Re-ranks `candidates` against `query` (or orders them by retrieval score). */
@@ -1094,6 +1401,9 @@ export class RAGPipeline {
       maxCharsPerPassage,
       template,
       separator = '\n---\n',
+      includeNotes = true,
+      noteText = (n: PassageNote): string => n.text,
+      notesLabel = 'Status',
     } = options;
 
     const parts = passages.map((p) => {
@@ -1105,12 +1415,21 @@ export class RAGPipeline {
           ? (p.metadata.source ?? p.metadata.title ?? p.metadata.documentId)
           : (p.metadata.title ?? p.metadata.source ?? p.metadata.documentId);
 
+      const notes =
+        includeNotes && p.notes !== undefined && p.notes.length > 0
+          ? p.notes.map(noteText).join(' ')
+          : '';
+
       if (template !== undefined) {
-        return template.replace('{{content}}', content).replace('{{source}}', source);
+        return template
+          .replace('{{content}}', content)
+          .replace('{{source}}', source)
+          .replace('{{notes}}', notes);
       }
 
       let text = content;
       if (includeSource) text += `\nSource: ${source}`;
+      if (notes !== '') text += `\n${notesLabel}: ${notes}`;
       if (includeScore) text += `\nScore: ${p.score.toFixed(3)}`;
       return text;
     });
@@ -1188,6 +1507,188 @@ export interface RAGPipelineReferenceOptions {
   extractor?: ReferenceExtractor;
 }
 
+/** Relations between documents in the pipeline (`rag.relations`). */
+export interface RAGPipelineRelationOptions {
+  /** Default mode; `RAGQuery.relations` overrides it. Default `'off'`. */
+  mode?: 'off' | 'on';
+  /** Most related documents searched per query. Default 3. */
+  maxSources?: number;
+  /** Passages searched per related document. Default 3. */
+  perSource?: number;
+}
+
+/** Validity, version and priority in the pipeline (`rag.validity`). */
+export interface RAGPipelineValidityOptions {
+  /** Default mode; `RAGQuery.validity` overrides it. Default `'off'`. */
+  mode?: 'off' | 'on';
+  /** Inactive documents (expired, confirmed total repeal): `'flag'` (default) or `'exclude'`. */
+  inactive?: 'flag' | 'exclude';
+  /** Score added for high priority and subtracted for low when ranking. Default 0.1. */
+  priorityWeight?: number;
+}
+
+const RELATION_TYPES: DocumentRelationType[] = ['derogates', 'modifies', 'regulates'];
+/** Most reference keys resolved through tags per search. */
+const MAX_TAG_LOOKUPS = 12;
+
+/** Reference of a passage in a trace. */
+function passageRef(p: Passage): {
+  id: string;
+  documentId: string;
+  chunkIndex?: number;
+  score: number;
+} {
+  return {
+    id: p.id,
+    documentId: p.metadata.documentId,
+    ...(p.metadata.chunkIndex !== undefined && { chunkIndex: p.metadata.chunkIndex }),
+    score: p.score,
+  };
+}
+
+/** ISO date (YYYY-MM-DD) of a date-like value, or undefined. */
+function isoDate(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (!(value instanceof Date) && typeof value !== 'string' && typeof value !== 'number') {
+    return undefined;
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+}
+
+/** Validity from chunk metadata (`custom.validFrom|validTo|version|priority`). */
+function statusFromMetadata(custom: Record<string, unknown> | undefined): DocumentStatus {
+  if (custom === undefined) return {};
+  const validFrom = isoDate(custom.validFrom);
+  const validTo = isoDate(custom.validTo);
+  const prio = custom.priority;
+  return {
+    ...(validFrom !== undefined && { validFrom }),
+    ...(validTo !== undefined && { validTo }),
+    ...(typeof custom.version === 'string' && custom.version !== '' && { version: custom.version }),
+    ...((prio === 'high' || prio === 'low' || prio === 'normal') && { priority: prio }),
+  };
+}
+
+/** Why a document is inactive: past its validity, or repealed in full (confirmed). */
+export function inactiveReason(
+  status: DocumentStatus | undefined,
+  now: number = Date.now(),
+): 'expired' | 'derogated' | undefined {
+  if (status === undefined) return undefined;
+  const to = isoDate(status.validTo);
+  if (to !== undefined && Date.parse(`${to}T23:59:59.999Z`) < now) return 'expired';
+  const repealed = (status.incoming ?? []).some(
+    (r) => r.type === 'derogates' && r.status === 'confirmed' && (r.scope ?? 'total') === 'total',
+  );
+  return repealed ? 'derogated' : undefined;
+}
+
+const VERB: Record<DocumentRelationType, [string, string]> = {
+  derogates: ['Repealed', 'repeals'],
+  modifies: ['Amended', 'amends'],
+  regulates: ['Regulated', 'regulates'],
+};
+
+function articlesText(articles: string[] | undefined): string {
+  return articles !== undefined && articles.length > 0 ? ` (articles ${articles.join(', ')})` : '';
+}
+
+/** English note of a passage whose document repeals, amends or regulates `label`. */
+function sourceNoteText(
+  type: DocumentRelationType,
+  status: 'proposed' | 'confirmed',
+  label: string,
+  articles?: string[],
+): string {
+  const verb = VERB[type][1];
+  return status === 'confirmed'
+    ? `This document ${verb} ${label}${articlesText(articles)}.`
+    : `This document possibly ${verb} ${label}${articlesText(articles)} (unconfirmed).`;
+}
+
+/** Status notes of a document's passages. */
+export function notesFor(
+  status: DocumentStatus | undefined,
+  withValidity: boolean,
+  now: number = Date.now(),
+): PassageNote[] {
+  if (status === undefined) return [];
+  const notes: PassageNote[] = [];
+  if (withValidity) {
+    const to = isoDate(status.validTo);
+    const from = isoDate(status.validFrom);
+    if (to !== undefined && inactiveReason({ validTo: to }, now) === 'expired') {
+      notes.push({ kind: 'expired', date: to, text: `No longer in force since ${to}.` });
+    } else if (from !== undefined && Date.parse(from) > now) {
+      notes.push({ kind: 'not_yet_valid', date: from, text: `In force from ${from}.` });
+    }
+    if (status.version !== undefined && status.version !== '') {
+      notes.push({ kind: 'version', version: status.version, text: `Version ${status.version}.` });
+    }
+  }
+  for (const r of status.incoming ?? []) {
+    const label = r.fromLabel ?? r.fromDocumentId;
+    const date = isoDate(r.date);
+    const when = date !== undefined ? ` on ${date}` : '';
+    const partial = (r.scope ?? (r.type === 'derogates' ? 'total' : 'partial')) === 'partial';
+    const kind: PassageNote['kind'] =
+      r.type === 'derogates'
+        ? partial
+          ? 'partially_derogated'
+          : 'derogated'
+        : r.type === 'modifies'
+          ? 'modified'
+          : 'regulated';
+    const what = kind === 'partially_derogated' ? 'Partially repealed' : VERB[r.type][0];
+    const text =
+      r.status === 'confirmed'
+        ? `${what} by ${label}${when}${articlesText(r.articles)}.`
+        : `Possibly ${what.toLowerCase()} by ${label}${articlesText(r.articles)} (unconfirmed; verify).`;
+    notes.push({
+      kind,
+      status: r.status,
+      documentId: r.fromDocumentId,
+      label,
+      ...(r.articles !== undefined && { articles: r.articles }),
+      ...(date !== undefined && { date }),
+      text,
+    });
+  }
+  return notes;
+}
+
+const GUIDANCE: ContextGuidanceTexts = {
+  missingHeading: 'Documents cited in the context that are not available:',
+  missingInstruction:
+    'If the answer depends on any of them, say so explicitly and state that it is not available.',
+  statusInstruction:
+    'Some passages carry a status line (validity, repeal, amendment). When you rely on such a passage, state its status in the answer (for example, that it was amended or is no longer in force), even if the related document does not change what you answer. Do not present repealed or expired content as current; where a later document amends or repeals a passage, follow the later one and say so; present unconfirmed changes as possible, not established. If passages give different versions or dates of the same rule, point out the discrepancy with its date and source instead of choosing silently.',
+};
+
+/**
+ * Instructions for the synthesis that go with a search result: the cited
+ * documents missing from the collection (`trace.references.missing`) and,
+ * when passages carry status notes, how to treat them. Empty when neither
+ * applies. Append it after the context.
+ *
+ * @param result - The search result.
+ * @param texts  - Overrides of the English texts (e.g. the host's language).
+ */
+export function buildContextGuidance(
+  result: Pick<RAGResult, 'passages' | 'trace'>,
+  texts: Partial<ContextGuidanceTexts> = {},
+): string {
+  const t = { ...GUIDANCE, ...texts };
+  const parts: string[] = [];
+  const missing = [...new Set((result.trace?.references?.missing ?? []).map((m) => m.label))];
+  if (missing.length > 0) {
+    parts.push(`${t.missingHeading} ${missing.slice(0, 8).join('; ')}. ${t.missingInstruction}`);
+  }
+  if (result.passages.some((p) => (p.notes?.length ?? 0) > 0)) parts.push(t.statusInstruction);
+  return parts.join('\n');
+}
+
 /** Only the security part of a filter (tenant and roles): reference searches cross the user's scope, never the ACL. */
 function securityFilters(filters: RAGQuery['filters']): RAGQuery['filters'] {
   if (filters === undefined) return undefined;
@@ -1224,6 +1725,7 @@ interface TraceInput {
   expansion?: RAGTrace['expansion'];
   lexicon?: RAGTrace['lexicon'];
   references?: RAGTrace['references'];
+  status?: RAGTrace['status'];
   /** Candidates sent to ranking (after any expansion). */
   candidateCount: number;
   /** Retrieval score of each candidate (normalised, from the first search that found it). */
@@ -1278,6 +1780,7 @@ function buildTrace(input: TraceInput): RAGTrace {
     ...(input.expansion !== undefined && { expansion: input.expansion }),
     ...(input.lexicon !== undefined && { lexicon: input.lexicon }),
     ...(input.references !== undefined && { references: input.references }),
+    ...(input.status !== undefined && { status: input.status }),
     minScore: input.minScore,
     finalTopK: input.finalTopK,
     candidateCount: input.candidateCount,

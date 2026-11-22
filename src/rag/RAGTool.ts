@@ -1,6 +1,13 @@
-import type { Tool, ExecutionContext, ToolResult, LLMMessage } from '../types/index.js';
+import type {
+  Tool,
+  ExecutionContext,
+  ToolResult,
+  LLMMessage,
+  ContextGuidanceTexts,
+  FormatOptions,
+} from '../types/index.js';
 import type { RAGFilter, RAGQuery } from './types.js';
-import type { RAGPipeline } from './RAGPipeline.js';
+import { buildContextGuidance, type RAGPipeline } from './RAGPipeline.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -46,6 +53,22 @@ export interface RAGToolOptions {
    * when `rag.references.mode` is `'follow'`.
    */
   references?: (context: ExecutionContext) => RAGQuery['resolveReferences'] | undefined;
+  /**
+   * Status of the calling context's documents (validity, version, priority,
+   * incoming relations; see `RAGQuery.describeDocuments`), plus per-search
+   * overrides of `rag.relations.mode` / `rag.validity.mode` / `rag.references.mode`.
+   */
+  status?: (
+    context: ExecutionContext,
+  ) => Pick<RAGQuery, 'describeDocuments' | 'relations' | 'validity' | 'references'> | undefined;
+  /**
+   * Instructions appended to the tool's context (missing cited documents,
+   * status notes; see `buildContextGuidance`). Default: true. Pass texts to
+   * render them in the host's language.
+   */
+  guidance?: boolean | Partial<ContextGuidanceTexts>;
+  /** Options of `formatForContext` for the tool's context (e.g. `noteText` in the host's language). */
+  format?: FormatOptions;
 }
 
 /**
@@ -208,6 +231,7 @@ export function createRAGTool(
       }
 
       const resolveReferences = options.references?.(context);
+      const status = options.status?.(context);
 
       const ragQuery: RAGQuery = {
         // Defaults applied first; LLM input overrides them.
@@ -227,11 +251,21 @@ export function createRAGTool(
         ...(lexicon?.languages !== undefined && { languages: lexicon.languages }),
         ...(lexicon?.glossary !== undefined && { glossary: lexicon.glossary }),
         ...(resolveReferences !== undefined && { resolveReferences }),
+        ...status,
       };
 
       try {
         const result = await pipeline.search(ragQuery, context);
-        const formatted = pipeline.formatForContext(result.passages);
+        const guidance =
+          options.guidance === false
+            ? ''
+            : buildContextGuidance(
+                result,
+                typeof options.guidance === 'object' ? options.guidance : {},
+              );
+        const formatted =
+          pipeline.formatForContext(result.passages, options.format) +
+          (guidance !== '' ? `\n\n${guidance}` : '');
 
         return {
           success: true,
