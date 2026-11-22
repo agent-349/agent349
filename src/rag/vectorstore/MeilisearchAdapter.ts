@@ -48,6 +48,8 @@ interface MeilisearchDocument {
   chunkIndex: number;
   totalChunks: number;
   contentHash: string;
+  /** `metadata.custom` as JSON text (host fields, chunk structure). */
+  custom: string;
   _vectors: { default: number[] };
 }
 
@@ -551,6 +553,7 @@ export class MeilisearchAdapter extends VectorStoreAdapter {
         ...(typeof hit['updatedAt'] === 'number' && {
           updatedAt: new Date(hit['updatedAt']),
         }),
+        ...parseCustom(hit['custom']),
       },
     };
   }
@@ -575,6 +578,7 @@ export class MeilisearchAdapter extends VectorStoreAdapter {
       chunkIndex: meta.chunkIndex ?? 0,
       totalChunks: meta.totalChunks ?? 0,
       contentHash: (meta.custom?.['contentHash'] as string | undefined) ?? '',
+      custom: JSON.stringify(meta.custom ?? {}),
       _vectors: { default: doc.vector },
     };
   }
@@ -603,6 +607,19 @@ export class MeilisearchAdapter extends VectorStoreAdapter {
  * Meilisearch uses single-quote-delimited strings in its filter grammar.
  * An embedded `'` must be doubled (`''`) to prevent filter injection.
  */
+/** `metadata.custom` from its stored JSON text (absent in documents written before it was stored). */
+function parseCustom(value: unknown): { custom?: Record<string, unknown> } {
+  if (typeof value !== 'string' || value === '' || value === '{}') return {};
+  try {
+    const custom = JSON.parse(value) as unknown;
+    return custom !== null && typeof custom === 'object' && !Array.isArray(custom)
+      ? { custom: custom as Record<string, unknown> }
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function escapeFilterValue(value: string): string {
   return value.replace(/'/g, "''");
 }
@@ -620,6 +637,7 @@ function toMeilisearchPatch(patch: Partial<DocumentMetadata>): Record<string, un
   if (patch.author !== undefined) out['author'] = patch.author;
   if (patch.title !== undefined) out['title'] = patch.title;
   if (patch.source !== undefined) out['source'] = patch.source;
+  if (patch.custom !== undefined) out['custom'] = JSON.stringify(patch.custom);
   if (Object.keys(out).length > 0) out['updatedAt'] = Date.now();
   return out;
 }

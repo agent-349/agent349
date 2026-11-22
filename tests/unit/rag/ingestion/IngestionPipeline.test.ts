@@ -131,6 +131,21 @@ describe('IngestionPipeline', () => {
     expect(second.chunksCreated).toBe(0);
   });
 
+  it('re-ingesting the same text with the defaults keeps the chunks (overwrite does not combine with dedup)', async () => {
+    const { pipeline, vectorStore } = buildPipeline();
+    const source = {
+      type: 'text' as const,
+      text: 'Paragraph one.\n\nParagraph two.',
+      metadata: { documentId: 'same-doc' },
+    };
+    const first = await pipeline.ingest(source, 'same-col');
+    const second = await pipeline.ingest(source, 'same-col');
+    expect(second.chunksCreated).toBe(first.chunksCreated);
+    expect(second.chunksSkipped).toBe(0);
+    const stored = await vectorStore.search('same-col', [0.1, 0.5, 0.3, 0.1], 10);
+    expect(stored.length).toBe(first.chunksCreated);
+  });
+
   // TC-ING-04: overwriteExisting replaces previous chunks
   it('TC-ING-04: overwriteExisting replaces previous chunks', async () => {
     const { pipeline, vectorStore } = buildPipeline();

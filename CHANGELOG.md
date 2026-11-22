@@ -6,6 +6,22 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Re-ingesting a document with unchanged text left it with no chunks.**
+  With the defaults (`deduplication` and `overwriteExisting` both on),
+  `ingest()` skipped every chunk whose hash it had already seen for the
+  document in this process, and then deleted all the document's previous
+  chunks before upserting: the document stayed registered but disappeared
+  from search. Deduplication now applies only when previous chunks are kept
+  (`overwriteExisting: false`), as `reingest()` already did.
+- **Meilisearch did not store `metadata.custom`.** Host fields and chunk
+  structure written at ingestion were dropped on upsert (only `contentHash`
+  was kept), so they never came back on search. The adapter now stores
+  `custom` as JSON text, as the Weaviate and Pinecone adapters do, and
+  `updateDocumentsMetadata` can patch it. Documents indexed before keep no
+  `custom` until they are re-ingested.
+
 ### Security
 
 - **SSRF: IPv6 literals carrying a private IPv4 address were treated as

@@ -178,7 +178,10 @@ export class IngestionPipeline {
 
     // 3. DEDUPLICATION ────────────────────────────────────────────────────────
     let skipped = 0;
-    if (config.deduplication) {
+    // With overwriteExisting every previous chunk is deleted below, so skipping
+    // chunks that already exist would leave them out of the index (a document
+    // re-ingested with the same text would end with no chunks at all).
+    if (config.deduplication && !config.overwriteExisting) {
       const existing = this.#getExistingHashes(collection, rawDoc.metadata.documentId);
       const before = chunks.length;
       chunks = chunks.filter((c) => !existing.has(c.contentHash));

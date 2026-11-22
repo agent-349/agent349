@@ -311,6 +311,33 @@ describe('MeilisearchAdapter', () => {
     expect(mockDeleteDocuments).not.toHaveBeenCalled();
   });
 
+  it('stores metadata.custom as JSON and returns it on search', async () => {
+    const custom = { ragId: 'r1', section: { articles: ['5'], derogated: ['5'] } };
+    await adapter.upsert('col', [makeDoc({ metadata: { ...makeDoc().metadata, custom } })]);
+    const uploaded = lastAddedDocs[0] as Record<string, unknown>;
+    expect(uploaded['custom']).toBe(JSON.stringify(custom));
+    mockSearch.mockReturnValueOnce(
+      Promise.resolve({
+        hits: [
+          {
+            id: 'c',
+            content: 'x',
+            documentId: 'doc-1',
+            custom: uploaded['custom'],
+            _rankingScore: 1,
+          },
+        ],
+      }),
+    );
+    const [hit] = await adapter.search('col', [0.1], 5);
+    expect(hit!.metadata.custom).toEqual(custom);
+    // Documents written before custom was stored have none.
+    mockSearch.mockReturnValueOnce(
+      Promise.resolve({ hits: [{ id: 'c', content: 'x', documentId: 'doc-1', _rankingScore: 1 }] }),
+    );
+    expect((await adapter.search('col', [0.1], 5))[0]!.metadata.custom).toBeUndefined();
+  });
+
   it('search returns empty array when Meilisearch returns no hits', async () => {
     mockSearch.mockReturnValueOnce(Promise.resolve({ hits: [] }));
     const results = await adapter.search('col', [0.1], 5);
