@@ -862,6 +862,31 @@ export interface SDKConfig {
      * keywords), every one is searched and the results are fused before
      * re-ranking against the original question. Off unless `mode` says so.
      */
+    /**
+     * Verification of generated answers against the passages they were based
+     * on (`AnswerVerifier`, `RAGPipeline.verifyAnswer`). Off unless `mode` is
+     * set. The host runs it after its synthesis and acts on the result with
+     * the policy below; `mode` tells the host how: `'after'` (deliver, then
+     * check and add a notice) or `'blocking'` (check before delivering).
+     */
+    verification?: {
+      mode?: 'off' | 'after' | 'blocking';
+      /** Provider instance. Default: `llm.defaultProvider`. */
+      llmProvider?: string;
+      /** Model. Default: `llm.defaultModel`. A small model is usually enough. */
+      model?: string;
+      /** Reasoning effort of the verification call. Default: `'low'`. */
+      reasoningEffort?: ReasoningEffort;
+      /** Most claims checked per answer. Default: 12. */
+      maxClaims?: number;
+      /** Abort the check after this many milliseconds. Default: 20000. */
+      timeoutMs?: number;
+      onUnsupported?: 'repair' | 'annotate' | 'abstain';
+      onNotApplicable?: 'annotate' | 'abstain';
+      onUncertain?: 'deliver' | 'annotate' | 'abstain';
+      onError?: 'deliver' | 'annotate' | 'abstain';
+      afterRepair?: 'annotate' | 'abstain';
+    };
     queryExpansion?: {
       /**
        * `'off'` (default), `'fallback'` (expand only when, after re-ranking, no
@@ -1306,6 +1331,20 @@ function validate(cfg: SDKConfig): void {
     }
   }
   validateLegal(cfg.rag.legal);
+  const vf = cfg.rag.verification;
+  if (vf !== undefined) {
+    const oneOf = (v: unknown, allowed: string[], path: string): void => {
+      if (v !== undefined && !allowed.includes(v as string)) {
+        throw new ConfigError(`${path} must be one of: ${allowed.join(', ')}`, path);
+      }
+    };
+    oneOf(vf.mode, ['off', 'after', 'blocking'], 'rag.verification.mode');
+    oneOf(vf.onUnsupported, ['repair', 'annotate', 'abstain'], 'rag.verification.onUnsupported');
+    oneOf(vf.onNotApplicable, ['annotate', 'abstain'], 'rag.verification.onNotApplicable');
+    oneOf(vf.onUncertain, ['deliver', 'annotate', 'abstain'], 'rag.verification.onUncertain');
+    oneOf(vf.onError, ['deliver', 'annotate', 'abstain'], 'rag.verification.onError');
+    oneOf(vf.afterRepair, ['annotate', 'abstain'], 'rag.verification.afterRepair');
+  }
   const st = cfg.rag.structure;
   if (st?.mode !== undefined && !['off', 'label', 'split'].includes(st.mode)) {
     throw new ConfigError(

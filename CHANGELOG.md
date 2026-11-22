@@ -159,6 +159,20 @@ series, incompatible behavior changes bump the minor version.
   references ("el artículo anterior") are supported. `LegalProfile.normaliseKey`
   migrates keys stored with two-digit years.
 
+- **Answer verification (`rag.verification`, `AnswerVerifier`).** A second,
+  cheaper model call checks a generated answer against the passages it was
+  based on: each claim (supported / partial / unsupported / contradicted,
+  with the passages that support it), whether the passages apply to the case
+  asked, and the figures of the answer that no passage contains (a hint to
+  the verifier). `RAGPipeline.verifyAnswer(input, context)` records the
+  tokens (`rag.verify`) and emits `rag.verification.end`; it never throws.
+  `decideVerification(result, policy)` turns the outcome into deliver /
+  repair / annotate / abstain (`onUnsupported`, `onNotApplicable`,
+  `onUncertain`, `onError`, `afterRepair`); `buildRepairInstruction` and
+  `verificationNotice` give the text for a second synthesis and for the
+  user. `mode` (`off` / `after` / `blocking`) tells the host whether to check
+  before or after delivering. `validateModels()` reports the `verifier` role.
+
 - **`buildContextGuidance(result, texts?)`.** Instructions for the synthesis:
   the cited documents missing from the collection and how to treat status
   notes (repealed, amended, unconfirmed, discrepancies between versions).

@@ -131,9 +131,15 @@ import { ReferenceExtractor } from '../rag/references/ReferenceExtractor.js';
 import { RelationExtractor } from '../rag/references/RelationExtractor.js';
 import { documentTags } from '../rag/references/documentTags.js';
 import { StructureParser } from '../rag/structure/StructureParser.js';
+import { AnswerVerifier } from '../rag/verification/AnswerVerifier.js';
+import type { VerificationPolicy } from '../rag/verification/AnswerVerifier.js';
 import { LegalProfile } from '../rag/legal/LegalProfile.js';
 import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
-import type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from '../rag/RAGPipeline.js';
+import type {
+  RAGPipelineExpansionOptions,
+  RAGPipelineLexiconOptions,
+  RAGPipelineVerificationOptions,
+} from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
 import type { ACLService } from '../security/ACLService.js';
 import type { SecurityMiddlewareChain } from '../security/middleware/SecurityMiddlewareChain.js';
@@ -2323,6 +2329,7 @@ export class Orchestrator {
         ...(rewriter.latencyMs !== undefined && { latencyMs: rewriter.latencyMs }),
       });
       models.push(expander);
+      models.push(await rag.pipeline.validateVerifier());
     }
 
     // Announced retirements, from the pricing catalog: a model that answers
@@ -2442,6 +2449,7 @@ export class Orchestrator {
       ragCfg.retrieval.rerankPolicy,
       {
         ...this.#buildQueryExpansion(ragCfg.queryExpansion),
+        ...this.#buildVerification(ragCfg.verification),
         lexicon: this.#buildLexicon(ragCfg.lexicon),
         references: {
           mode: ragCfg.references?.mode ?? 'off',
@@ -2739,6 +2747,32 @@ export class Orchestrator {
    * expander is built whenever the section exists — even with `mode: 'off'`
    * — so a single search can still ask for `expansion: 'always'`.
    */
+  #buildVerification(vCfg: SDKConfig['rag']['verification'] | undefined): {
+    verification?: RAGPipelineVerificationOptions;
+  } {
+    if (vCfg === undefined) return {};
+    const model = vCfg.model ?? this.#config.llm.defaultModel ?? 'claude-haiku-4-5';
+    const provider = vCfg.llmProvider ?? this.#config.llm.defaultProvider ?? 'claude';
+    const policy: VerificationPolicy = {
+      ...(vCfg.onUnsupported !== undefined && { onUnsupported: vCfg.onUnsupported }),
+      ...(vCfg.onNotApplicable !== undefined && { onNotApplicable: vCfg.onNotApplicable }),
+      ...(vCfg.onUncertain !== undefined && { onUncertain: vCfg.onUncertain }),
+      ...(vCfg.onError !== undefined && { onError: vCfg.onError }),
+      ...(vCfg.afterRepair !== undefined && { afterRepair: vCfg.afterRepair }),
+    };
+    return {
+      verification: {
+        mode: vCfg.mode ?? 'off',
+        verifier: new AnswerVerifier(this.#router, provider, model, {
+          ...(vCfg.reasoningEffort !== undefined && { reasoningEffort: vCfg.reasoningEffort }),
+          ...(vCfg.maxClaims !== undefined && { maxClaims: vCfg.maxClaims }),
+          ...(vCfg.timeoutMs !== undefined && { timeoutMs: vCfg.timeoutMs }),
+        }),
+        policy,
+      },
+    };
+  }
+
   #buildQueryExpansion(qeCfg: SDKConfig['rag']['queryExpansion'] | undefined): {
     queryExpander?: QueryExpander;
     expansion?: RAGPipelineExpansionOptions;

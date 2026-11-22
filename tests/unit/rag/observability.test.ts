@@ -558,6 +558,7 @@ describe('Orchestrator.validateModels()', () => {
       'reranker',
       'queryRewriter',
       'queryExpander',
+      'verifier',
     ]);
     expect(report.models[0]).toMatchObject({
       provider: 'mock',

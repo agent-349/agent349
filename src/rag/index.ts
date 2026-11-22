@@ -64,6 +64,22 @@ export type {
   ExtractedRelation,
 } from './references/RelationExtractor.js';
 export { documentTags, REF_TAG, REL_TAG } from './references/documentTags.js';
+export {
+  AnswerVerifier,
+  decideVerification,
+  buildRepairInstruction,
+  verificationNotice,
+  unmatchedNumbers,
+} from './verification/AnswerVerifier.js';
+export type {
+  AnswerVerifierOptions,
+  VerificationAction,
+  VerificationInput,
+  VerificationPolicy,
+  VerificationResult,
+  VerificationTexts,
+  VerifiedClaim,
+} from './verification/AnswerVerifier.js';
 export { StructureParser, sectionTags, internalReferenceTag } from './structure/StructureParser.js';
 export { LegalProfile, defaultLegalProfile } from './legal/LegalProfile.js';
 export type { LegalConfig, LegalReferenceConfig } from './legal/LegalProfile.js';
@@ -101,6 +117,7 @@ export type {
   RAGPipelineReferenceOptions,
   RAGPipelineRelationOptions,
   RAGPipelineValidityOptions,
+  RAGPipelineVerificationOptions,
 } from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';

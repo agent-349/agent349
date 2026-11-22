@@ -304,6 +304,24 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     };
   },
 
+  'rag.verification.end': (data) => ({
+    category: 'rag',
+    action: 'verification',
+    outcome: data.verdict === 'error' ? 'failure' : 'success',
+    severity: data.verdict === 'fail' || data.verdict === 'error' ? 'warning' : 'info',
+    detail: {
+      summary: `RAG answer verification: ${data.verdict as string} (${data.claims as number} claim(s), ${data.unsupported as number} unsupported, ${data.applicability as string})`,
+      output: {
+        verdict: data.verdict,
+        claims: data.claims,
+        unsupported: data.unsupported,
+        applicability: data.applicability,
+        ...(data.error !== undefined && { error: data.error }),
+      },
+    },
+    metrics: { durationMs: data.latencyMs as number },
+  }),
+
   'rag.status.end': (data) => ({
     category: 'rag',
     action: 'status',

@@ -441,6 +441,52 @@ const { text, pages, ocrPages, avgConfidence } = await ocr.extractPdf(pdfBytes);
 await ocr.close();
 ```
 
+### Answer verification
+
+Retrieval can bring the right passage and the answer still add a figure, a
+condition or a step the passage does not contain, or apply a rule to a case
+it does not cover. `rag.verification` adds a check after the synthesis:
+
+```json
+"rag": {
+  "verification": {
+    "mode": "blocking",
+    "model": "a-small-model",
+    "onUnsupported": "repair",
+    "onNotApplicable": "annotate",
+    "onUncertain": "deliver",
+    "onError": "deliver",
+    "afterRepair": "annotate"
+  }
+}
+```
+
+```typescript
+const result = await orch.rag.pipeline.verifyAnswer(
+  { question, answer, passages },   // the passages given to the synthesis
+  context,
+);
+switch (decideVerification(result, orch.rag.pipeline.verification.policy)) {
+  case 'deliver':  break;
+  case 'repair':   /* synthesise again with buildRepairInstruction(result), verify once more */ break;
+  case 'annotate': answer += '\n\n' + verificationNotice(result); break;
+  case 'abstain':  answer = '…'; break;
+}
+```
+
+The verifier lists the claims of the answer and classifies each one against
+the passages, decides whether the passages apply to the situation asked, and
+gets the figures of the answer that appear in no passage as a hint (passages
+may spell numbers out, so they are not a verdict on their own). The result is
+`pass`, `fail` (a claim unsupported or contradicted, or the passages do not
+apply), `uncertain` (partial support, uncertain applicability) or `error`
+(the check could not run: provider error, `timeoutMs`, unreadable reply).
+
+`mode` is advice for the host, which owns the delivery: `'blocking'` checks
+before showing the answer (no answer is shown and then withdrawn; adds the
+verification latency), `'after'` shows it and adds a notice when the check
+fails. A repaired answer cannot be repaired again: `afterRepair` decides.
+
 ## Giving agents access
 
 `rag.search` is a regular tool. Create one bound to your collections and put it

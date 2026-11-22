@@ -37,6 +37,12 @@ import type { ReferenceExtractor } from './references/ReferenceExtractor.js';
 import { REF_TAG, REL_TAG } from './references/documentTags.js';
 import type { StructureParser } from './structure/StructureParser.js';
 import { internalReferenceTag, sectionTags } from './structure/StructureParser.js';
+import type {
+  AnswerVerifier,
+  VerificationInput,
+  VerificationPolicy,
+  VerificationResult,
+} from './verification/AnswerVerifier.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -108,6 +114,7 @@ export class RAGPipeline {
     internal: boolean;
   };
   readonly #relations: Required<RAGPipelineRelationOptions>;
+  readonly #verification: RAGPipelineVerificationOptions;
   readonly #validity: Required<RAGPipelineValidityOptions>;
   readonly #expansion: Required<Omit<RAGPipelineExpansionOptions, 'fallbackBelow'>> &
     Pick<RAGPipelineExpansionOptions, 'fallbackBelow'>;
@@ -143,6 +150,7 @@ export class RAGPipeline {
       references?: RAGPipelineReferenceOptions;
       relations?: RAGPipelineRelationOptions;
       validity?: RAGPipelineValidityOptions;
+      verification?: RAGPipelineVerificationOptions;
     } = {},
   ) {
     this.#embedding = embeddingRouter;
@@ -171,6 +179,7 @@ export class RAGPipeline {
       }),
       internal: options.references?.internal ?? options.references?.structure !== undefined,
     };
+    this.#verification = options.verification ?? {};
     this.#relations = {
       mode: options.relations?.mode ?? 'off',
       maxSources: Math.max(1, options.relations?.maxSources ?? 3),
@@ -279,6 +288,77 @@ export class RAGPipeline {
   /** Lines of the installation glossary file that could not be read. */
   get glossaryErrors(): GlossaryParseResult['errors'] {
     return this.#glossaryErrors;
+  }
+
+  /** The answer verifier, its mode and policy (`rag.verification`). */
+  get verification(): RAGPipelineVerificationOptions {
+    return this.#verification;
+  }
+
+  /**
+   * Verifies a generated answer against the passages it was based on
+   * (`rag.verification`): records the tokens, emits `rag.verification.end`.
+   * Never throws; without a verifier the result is `error`.
+   *
+   * @param input   - Question, answer and the passages given to the synthesis.
+   * @param context - Execution context (tenant, user) for token accounting.
+   */
+  async verifyAnswer(
+    input: VerificationInput,
+    context: ExecutionContext,
+  ): Promise<VerificationResult> {
+    const verifier = this.#verification.verifier;
+    if (verifier === undefined) {
+      return {
+        verdict: 'error',
+        claims: [],
+        applicability: { verdict: 'uncertain' },
+        unmatchedNumbers: [],
+        error: 'no answer verifier configured (rag.verification)',
+        model: '',
+        latencyMs: 0,
+      };
+    }
+    const result = await verifier.verify(input);
+    if ((result.inputTokens ?? 0) + (result.outputTokens ?? 0) > 0) {
+      await this.#tokens.record(context, {
+        inputTokens: result.inputTokens ?? 0,
+        outputTokens: result.outputTokens ?? 0,
+        totalTokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+        provider: verifier.provider,
+        model: verifier.model,
+        toolName: 'rag.verify',
+      });
+    }
+    this.#bus.emit('rag.verification.end', {
+      ...context,
+      verdict: result.verdict,
+      claims: result.claims.length,
+      unsupported: result.claims.filter(
+        (c) => c.verdict === 'unsupported' || c.verdict === 'contradicted',
+      ).length,
+      applicability: result.applicability.verdict,
+      latencyMs: result.latencyMs,
+      ...(result.error !== undefined && { error: result.error }),
+    });
+    return result;
+  }
+
+  /** Probes the configured answer verifier. Never throws. */
+  async validateVerifier(): Promise<ModelValidation> {
+    const verifier = this.#verification.verifier;
+    if (verifier === undefined) return { role: 'verifier', configured: false, available: false };
+    const startMs = Date.now();
+    const probe = await verifier.validate();
+    return {
+      role: 'verifier',
+      configured: true,
+      provider: verifier.provider,
+      model: verifier.model,
+      available: probe.ok,
+      latencyMs: Date.now() - startMs,
+      ...(!probe.ok && { error: probe.error ?? 'the verifier probe did not succeed' }),
+    };
   }
 
   /** The query expander used for multi-query retrieval, if any. */
@@ -1654,6 +1734,15 @@ export interface RAGPipelineReferenceOptions {
   structure?: StructureParser;
   /** Follow internal references. Default: true when `structure` is given. */
   internal?: boolean;
+}
+
+/** Answer verification in the pipeline (`rag.verification`). */
+export interface RAGPipelineVerificationOptions {
+  /** How the host should run it: `'after'` delivery, `'blocking'` before, or `'off'`. Default `'off'`. */
+  mode?: 'off' | 'after' | 'blocking';
+  verifier?: AnswerVerifier;
+  /** What to do with each outcome (see `decideVerification`). */
+  policy?: VerificationPolicy;
 }
 
 /** Relations between documents in the pipeline (`rag.relations`). */

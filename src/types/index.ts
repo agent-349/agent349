@@ -1974,7 +1974,7 @@ export interface QueryRewriterValidation {
  */
 export interface ModelValidation {
   /** What the model is used for. */
-  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter' | 'queryExpander';
+  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter' | 'queryExpander' | 'verifier';
   /** Whether this role is configured. An unconfigured role is not a failure. */
   configured: boolean;
   /** Provider name. */
