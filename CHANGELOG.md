@@ -6,6 +6,8 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-22
+
 ### Fixed
 
 - **Re-ingesting a document with unchanged text left it with no chunks.**
@@ -393,7 +395,7 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
   despite the read-only transaction (only grants stop it), date-time handling,
   and the redirect and IPv6 rules.
 
-### Changed
+### Changed — BREAKING
 
 - **Providers no longer price calls.** The built-in pricing tables of the
   OpenAI, Claude and Gemini adapters are gone, with `OpenAIModelPricing`,
@@ -439,16 +441,9 @@ fallbackReason?, error? }`. The pipeline uses it; custom rewriters inherit a
     `reasoningEffort` (256 tokens at `minimal`, 2048 at `low`, …); a fixed
     256-token headroom made `gpt-5-nano` at `low` fail every parse.
   - New `samples` option averages independent scoring passes.
-    Measured on a real Spanish corpus (14 colloquial questions with a verified
-    answering passage and 4 out-of-domain ones, 3 runs each): `gpt-6-luna`
-    kept the answering passage in context in 42/42 runs and every
-    out-of-domain question at or below 0.1, with zero run-to-run variance, at
-    2.7 s; `gpt-6.1-sol` and `gpt-6.1-terra` came close. `gpt-5-nano` improved
-    from 6/42 to 23/42 but stays unreliable. With `gpt-5` the rubric made
-    scoring more lenient (an unrelated procedure sharing elements with the
-    query could reach 1.0), so the previous prompt suited that model better.
-    Scores shift upwards; recalibrate `minScore` (0.4–0.5 separated the levels
-    cleanly).
+
+  Scores shift upwards: recalibrate `minScore` after upgrading.
+
 - **The re-ranker scores every retrieval candidate**, not just `finalTopK`, so
   the trace can report the scores of the passages below the cut. LLM and
   cross-encoder re-rankers already read every candidate; the Cohere re-ranker
@@ -687,5 +682,6 @@ guide (Spanish).
 - With local cross-encoders (TEI), latency grows linearly with `topK` and chunk
   size. Without a GPU it can exceed one second per candidate.
 
-[Unreleased]: https://github.com/agent-349/agent349/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/agent-349/agent349/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/agent-349/agent349/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/agent-349/agent349/releases/tag/v0.5.0
