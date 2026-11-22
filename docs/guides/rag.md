@@ -226,6 +226,35 @@ await orch.rag.ingest('./knowledge/salary-bands.pdf', 'hr-policies', {
   `<provider>/<model>`. Searches embed the query with the provider named before
   the slash. Changing the model means re-ingesting into a new collection.
 
+### Cross-document references
+
+Regulations and procedures refer to each other ("see Annex XIV", "under Law
+15.896"). With `rag.references.mode: 'follow'`, the passages that reach the
+context are scanned for such references; each cited document is searched with
+the same question (and the same query vector) and its passages join the result
+only if they pass the re-ranker and `minScore`. Cited documents that are not in
+the collection are reported in `trace.references.missing`, so the answer can
+say so instead of answering half-way.
+
+```json
+"rag": { "references": { "mode": "follow", "maxTargets": 3, "perTarget": 3 } }
+```
+
+References are normalised to keys — `annex:14`, `law:12345`, `decree:120/15`,
+`circular:3456`, `resolution:45/20` — so "Anexo XIV", "anexo 14" and "Anexo N°
+14" match. Built-in patterns cover annexes/appendices, laws, decrees,
+circulars and resolutions in Spanish, English and Portuguese; `patterns` adds
+your own (`{ kind, pattern }`, one capture group for the identifier).
+
+The SDK has no registry of your documents, so the host maps keys to
+documentIds with `RAGQuery.resolveReferences` (or `createRAGTool(..., {
+references })` in agentic mode). `ReferenceExtractor.identify(title)` gives the
+keys that identify a document ("2 - ANEXO II - Decreto 120-15" → `annex:2`,
+`decree:120/15`) for that registry. The searches of cited documents keep the
+tenant and role filters and drop the rest of the scope (tags, categories): a
+reference made by the document applies whatever the user filtered, never past
+the ACL.
+
 ### OCR of scanned documents
 
 With `rag.ocr.enabled`, the PDF loader keeps the text layer of each page and

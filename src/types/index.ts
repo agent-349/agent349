@@ -1565,7 +1565,22 @@ export interface RAGQuery {
    * format.
    */
   glossary?: GlossaryEntry[];
+  /**
+   * Follow references of the passages that reach the context to the documents
+   * they cite ("Anexo XIV", "Ley 12.345"), overriding `rag.references.mode`.
+   * Needs {@link RAGQuery.resolveReferences}.
+   */
+  references?: 'off' | 'follow';
+  /**
+   * Resolves reference keys (`annex:14`, `law:12345`…) to the `documentId`s of
+   * the collection they identify. Keys without documents are reported as
+   * missing references. Supplied by the host, which owns the document registry.
+   */
+  resolveReferences?: ReferenceResolver;
 }
+
+/** Maps reference keys to the documentIds they identify (see `RAGQuery.resolveReferences`). */
+export type ReferenceResolver = (keys: string[]) => Promise<Record<string, string[]>>;
 
 /**
  * One glossary entry: terms of the domain that the search should treat as
@@ -1656,6 +1671,21 @@ export interface RAGTrace {
   originalQuery: string;
   /** The query actually embedded and searched (after rewriting, if any). */
   searchQuery: string;
+  /** References followed from the context passages; absent when not enabled. */
+  references?: {
+    /** Each resolved reference: the passage that cites it and the passages it added. */
+    followed: {
+      key: string;
+      label: string;
+      fromPassageId: string;
+      fromDocumentId: string;
+      targets: string[];
+      /** Passages added to the result (they passed the re-ranker and minScore). */
+      added: { id: string; documentId: string; chunkIndex?: number; score: number }[];
+    }[];
+    /** Cited documents that are not in the collection. */
+    missing: { key: string; label: string; fromPassageId: string; fromDocumentId: string }[];
+  };
   /** Lexical processing of the query; absent when nothing applied. */
   lexicon?: {
     /** Where stop words applied: in the engine, or removed from the keyword query. */

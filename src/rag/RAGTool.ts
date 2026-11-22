@@ -40,6 +40,12 @@ export interface RAGToolOptions {
     | Pick<RAGQuery, 'languages' | 'glossary'>
     | undefined
     | Promise<Pick<RAGQuery, 'languages' | 'glossary'> | undefined>;
+  /**
+   * Resolver of reference keys to documents for the calling context's
+   * collection (see `RAGQuery.resolveReferences`); references are followed
+   * when `rag.references.mode` is `'follow'`.
+   */
+  references?: (context: ExecutionContext) => RAGQuery['resolveReferences'] | undefined;
 }
 
 /**
@@ -201,6 +207,8 @@ export function createRAGTool(
         }
       }
 
+      const resolveReferences = options.references?.(context);
+
       const ragQuery: RAGQuery = {
         // Defaults applied first; LLM input overrides them.
         ...defaults,
@@ -218,6 +226,7 @@ export function createRAGTool(
           conversationHistory.length > 0 && { conversationHistory }),
         ...(lexicon?.languages !== undefined && { languages: lexicon.languages }),
         ...(lexicon?.glossary !== undefined && { glossary: lexicon.glossary }),
+        ...(resolveReferences !== undefined && { resolveReferences }),
       };
 
       try {

@@ -304,6 +304,18 @@ const EVENT_MAPPERS: Record<string, EventMapper> = {
     };
   },
 
+  'rag.references.end': (data) => ({
+    category: 'rag',
+    action: 'references',
+    outcome: 'success',
+    severity: (data.missing as unknown[] | undefined)?.length ? 'warning' : 'info',
+    detail: {
+      summary: `RAG references: ${data.followed as number} followed, ${data.added as number} passage(s) added, ${(data.missing as unknown[]).length} missing document(s)`,
+      output: { followed: data.followed, added: data.added, missing: data.missing },
+    },
+    metrics: { durationMs: data.latencyMs as number },
+  }),
+
   'rag.collection.stop_words': (data) => ({
     category: 'rag',
     action: 'collection_stop_words',

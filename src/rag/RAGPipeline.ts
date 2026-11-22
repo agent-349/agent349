@@ -27,6 +27,7 @@ import type { QueryExpander } from './queryRewriting/QueryExpander.js';
 import { fuseRankedLists } from './fusion/RRF.js';
 import type { GlossaryEntry, GlossaryParseResult, StopWords } from './lexicon/Lexicon.js';
 import { matchGlossaryTerms, mergeGlossaries } from './lexicon/Lexicon.js';
+import type { ReferenceExtractor } from './references/ReferenceExtractor.js';
 import { RAGError } from '../errors/RAGError.js';
 import { RerankerError } from '../errors/RerankerError.js';
 import { TokenLimitError } from '../errors/index.js';
@@ -90,6 +91,9 @@ export class RAGPipeline {
   readonly #glossaryErrors: GlossaryParseResult['errors'];
   readonly #glossaryRewrite: boolean;
   readonly #stopWordsMode: 'auto' | 'native' | 'query';
+  readonly #references: Required<Omit<RAGPipelineReferenceOptions, 'extractor'>> & {
+    extractor?: ReferenceExtractor;
+  };
   readonly #expansion: Required<Omit<RAGPipelineExpansionOptions, 'fallbackBelow'>> &
     Pick<RAGPipelineExpansionOptions, 'fallbackBelow'>;
 
@@ -121,6 +125,7 @@ export class RAGPipeline {
       queryExpander?: QueryExpander;
       expansion?: RAGPipelineExpansionOptions;
       lexicon?: RAGPipelineLexiconOptions;
+      references?: RAGPipelineReferenceOptions;
     } = {},
   ) {
     this.#embedding = embeddingRouter;
@@ -137,6 +142,14 @@ export class RAGPipeline {
     this.#glossaryErrors = options.lexicon?.glossaryErrors ?? [];
     this.#glossaryRewrite = options.lexicon?.glossaryRewrite ?? true;
     this.#stopWordsMode = options.lexicon?.stopWordsMode ?? 'auto';
+    this.#references = {
+      mode: options.references?.mode ?? 'off',
+      maxTargets: Math.max(1, options.references?.maxTargets ?? 3),
+      perTarget: Math.max(1, options.references?.perTarget ?? 3),
+      ...(options.references?.extractor !== undefined && {
+        extractor: options.references.extractor,
+      }),
+    };
     this.#expansion = {
       mode: options.expansion?.mode ?? 'off',
       maxCandidates: Math.max(1, options.expansion?.maxCandidates ?? 40),
@@ -629,6 +642,43 @@ export class RAGPipeline {
     if (minScore > 0) {
       finalPassages = finalPassages.filter((p) => p.score >= minScore);
     }
+    const droppedByMinScore = beforeMinScore - finalPassages.length;
+
+    // ── 6. REFERENCES (optional) ─────────────────────────────────────────────
+    // Documents cited by the context passages ("Anexo XIV") are searched with
+    // the same question; what passes the re-ranker and minScore joins the
+    // result. Cited documents that are not in the collection are reported.
+    let references: RAGTrace['references'];
+    let referencesLatencyMs: number | undefined;
+    const referenceMode = ragQuery.references ?? this.#references.mode;
+    if (
+      referenceMode === 'follow' &&
+      ragQuery.resolveReferences !== undefined &&
+      this.#references.extractor !== undefined &&
+      finalPassages.length > 0
+    ) {
+      const refStart = Date.now();
+      const followed = await this.#followReferences(
+        query,
+        finalPassages,
+        ragQuery.resolveReferences,
+        this.#references.extractor,
+        { ...retrieveParams, filters: securityFilters(filters) },
+        retrieval.vector,
+        { finalTopK, rerank, rerankPolicy, minScore },
+        context,
+        emit,
+      );
+      references = followed.trace;
+      finalPassages = [...finalPassages, ...followed.added];
+      referencesLatencyMs = Date.now() - refStart;
+      emit('rag.references.end', {
+        latencyMs: referencesLatencyMs,
+        followed: references.followed.length,
+        added: followed.added.length,
+        missing: references.missing.map((m) => m.key),
+      });
+    }
 
     const trace = buildTrace({
       originalQuery: rawQuery,
@@ -639,6 +689,7 @@ export class RAGPipeline {
         }),
       ...(expansion !== undefined && { expansion }),
       ...(lexicon !== undefined && { lexicon }),
+      ...(references !== undefined && { references }),
       candidateCount: candidates.length,
       retrievalScores,
       ...(foundBy !== undefined && { foundBy }),
@@ -646,7 +697,7 @@ export class RAGPipeline {
       reranked: ranking.reranked,
       finalTopK,
       minScore,
-      droppedByMinScore: beforeMinScore - finalPassages.length,
+      droppedByMinScore,
     });
 
     const totalLatencyMs = Date.now() - pipelineStart;
@@ -657,6 +708,7 @@ export class RAGPipeline {
       totalLatencyMs,
       ...(queryRewriteLatencyMs !== undefined && { queryRewriteLatencyMs }),
       ...(expansionLatencyMs !== undefined && { expansionLatencyMs }),
+      ...(referencesLatencyMs !== undefined && { referencesLatencyMs }),
       ...(rerankLatencyMs !== undefined && { rerankLatencyMs }),
       ...(rerankTokens !== undefined && { tokensUsed: llmTokens + embeddingTokens }),
     };
@@ -729,6 +781,7 @@ export class RAGPipeline {
     params: RetrieveParams,
     context: ExecutionContext,
     emit: Emit,
+    precomputedVector?: number[],
   ): Promise<RetrieveResult> {
     const { providerName, collections, topK, searchMode, hybridAlpha, filters, rrfK } = params;
     // The keyword component gets the text without stop words; the vector
@@ -741,7 +794,16 @@ export class RAGPipeline {
     // ── EMBED ────────────────────────────────────────────────────────────
     emit('rag.embed.start', { query: text });
     const embedStart = Date.now();
-    const embResult = await this.#embedding.embed(text, providerName);
+    // A follow-up search of the same text reuses the query vector (no new embedding).
+    const embResult =
+      precomputedVector !== undefined
+        ? {
+            vector: precomputedVector,
+            tokensUsed: 0,
+            model: '',
+            dimensions: precomputedVector.length,
+          }
+        : await this.#embedding.embed(text, providerName);
     // The query embedding is billed too: record it like the re-ranker's tokens.
     if (embResult.tokensUsed > 0) {
       await this.#tokens.record(context, {
@@ -788,6 +850,7 @@ export class RAGPipeline {
 
     return {
       merged: deduplicatePassages(allPassages),
+      vector: embResult.vector,
       keywordText: keyword.text,
       stopWordsRemoved: keyword.removed,
       totalFound: allPassages.length,
@@ -795,6 +858,115 @@ export class RAGPipeline {
       embeddingLatencyMs,
       searchLatencyMs,
     };
+  }
+
+  /**
+   * Follows the references of the context passages: resolves their keys with
+   * the host's resolver, searches each cited document (not already in the
+   * context) with the same question and query vector, re-ranks the new
+   * passages and keeps those reaching `minScore`. Reports cited documents
+   * that are not in the collection.
+   */
+  async #followReferences(
+    query: string,
+    passages: Passage[],
+    resolve: NonNullable<RAGQuery['resolveReferences']>,
+    extractor: ReferenceExtractor,
+    params: RetrieveParams,
+    vector: number[],
+    rank: RankParams & { minScore: number },
+    context: ExecutionContext,
+    emit: Emit,
+  ): Promise<{ trace: NonNullable<RAGTrace['references']>; added: Passage[] }> {
+    // References in order of the passages (best first), first citing passage wins.
+    const cited = new Map<string, { label: string; from: Passage }>();
+    for (const p of passages) {
+      for (const ref of extractor.extract(p.content)) {
+        if (!cited.has(ref.key)) cited.set(ref.key, { label: ref.label, from: p });
+      }
+    }
+    const out: NonNullable<RAGTrace['references']> = { followed: [], missing: [] };
+    if (cited.size === 0) return { trace: out, added: [] };
+    const resolved = await resolve([...cited.keys()]);
+    const inContext = new Set(passages.map((p) => p.metadata.documentId));
+    const searched = new Set<string>();
+    const plan: { key: string; label: string; from: Passage; targets: string[] }[] = [];
+    for (const [key, { label, from }] of cited) {
+      const docs = resolved[key] ?? [];
+      const others = docs.filter((d) => d !== from.metadata.documentId);
+      if (docs.length === 0) {
+        out.missing.push({
+          key,
+          label,
+          fromPassageId: from.id,
+          fromDocumentId: from.metadata.documentId,
+        });
+        continue;
+      }
+      // Self-reference ("Anexo XIV" inside the Anexo XIV) or already in context: nothing to add.
+      const targets = others.filter((d) => !inContext.has(d) && !searched.has(d));
+      if (targets.length === 0 || searched.size >= this.#references.maxTargets) continue;
+      const take = targets.slice(0, this.#references.maxTargets - searched.size);
+      take.forEach((d) => searched.add(d));
+      plan.push({ key, label, from, targets: take });
+    }
+    if (plan.length === 0) return { trace: out, added: [] };
+
+    // Same question and vector, restricted to each cited document.
+    const found = await Promise.all(
+      plan.map((item) =>
+        this.#retrieve(
+          query,
+          {
+            ...params,
+            topK: this.#references.perTarget,
+            filters: { ...params.filters, documentId: item.targets },
+          },
+          context,
+          emit,
+          vector,
+        ),
+      ),
+    );
+    const seen = new Set(passages.map((p) => p.id));
+    const fresh: { passage: Passage; item: number }[] = [];
+    found.forEach((r, item) => {
+      for (const p of r.merged) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        fresh.push({ passage: p, item });
+      }
+    });
+    const ranked =
+      fresh.length > 0
+        ? await this.#rank(
+            query,
+            fresh.map((f) => f.passage),
+            { ...rank, finalTopK: fresh.length },
+            context,
+            emit,
+          )
+        : { rankedAll: [] as Passage[], finalPassages: [] as Passage[], reranked: false };
+    const byId = new Map(fresh.map((f) => [f.passage.id, f.item]));
+    const added = ranked.rankedAll.filter((p) => rank.minScore <= 0 || p.score >= rank.minScore);
+    plan.forEach((item, index) => {
+      out.followed.push({
+        key: item.key,
+        label: item.label,
+        fromPassageId: item.from.id,
+        fromDocumentId: item.from.metadata.documentId,
+        targets: item.targets,
+        added: added
+          .filter((p) => byId.get(p.id) === index)
+          .map((p) => ({
+            id: p.id,
+            documentId: p.metadata.documentId,
+            ...(p.metadata.chunkIndex !== undefined && { chunkIndex: p.metadata.chunkIndex }),
+            score: p.score,
+          })),
+      });
+    });
+    return { trace: out, added };
   }
 
   /** Re-ranks `candidates` against `query` (or orders them by retrieval score). */
@@ -969,6 +1141,7 @@ interface RetrieveParams {
 /** Result of one retrieval pass. */
 interface RetrieveResult {
   merged: Passage[];
+  vector: number[];
   keywordText: string;
   stopWordsRemoved: number;
   totalFound: number;
@@ -1003,6 +1176,27 @@ export interface RAGPipelineExpansionOptions {
   maxCandidates?: number;
 }
 
+/** Reference following of the pipeline (`rag.references`). */
+export interface RAGPipelineReferenceOptions {
+  /** Default mode; `RAGQuery.references` overrides it. Default `'off'`. */
+  mode?: 'off' | 'follow';
+  /** Most cited documents searched per query. Default 3. */
+  maxTargets?: number;
+  /** Passages searched per cited document. Default 3. */
+  perTarget?: number;
+  /** Finds the references in the passages. */
+  extractor?: ReferenceExtractor;
+}
+
+/** Only the security part of a filter (tenant and roles): reference searches cross the user's scope, never the ACL. */
+function securityFilters(filters: RAGQuery['filters']): RAGQuery['filters'] {
+  if (filters === undefined) return undefined;
+  return {
+    ...(filters.tenantId !== undefined && { tenantId: filters.tenantId }),
+    ...(filters.accessRoles !== undefined && { accessRoles: filters.accessRoles }),
+  };
+}
+
 /** Stop words and installation glossary of the pipeline (`rag.lexicon`). */
 export interface RAGPipelineLexiconOptions {
   /** Removes stop words from the keyword component of every search. */
@@ -1029,6 +1223,7 @@ interface TraceInput {
   rewrite?: { strategy: string; outcome: QueryRewriteOutcome };
   expansion?: RAGTrace['expansion'];
   lexicon?: RAGTrace['lexicon'];
+  references?: RAGTrace['references'];
   /** Candidates sent to ranking (after any expansion). */
   candidateCount: number;
   /** Retrieval score of each candidate (normalised, from the first search that found it). */
@@ -1082,6 +1277,7 @@ function buildTrace(input: TraceInput): RAGTrace {
     ...(rewrite !== undefined && { rewrite }),
     ...(input.expansion !== undefined && { expansion: input.expansion }),
     ...(input.lexicon !== undefined && { lexicon: input.lexicon }),
+    ...(input.references !== undefined && { references: input.references }),
     minScore: input.minScore,
     finalTopK: input.finalTopK,
     candidateCount: input.candidateCount,

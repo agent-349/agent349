@@ -687,6 +687,26 @@ export interface SDKConfig {
       reasoningEffort?: ReasoningEffort;
     };
     /**
+     * Cross-document references: the passages that reach the context are
+     * scanned for references ("Anexo XIV", "Ley 12.345", "Decreto 120/15");
+     * the cited documents are searched with the same question and what is
+     * relevant joins the result. Cited documents that are not in the
+     * collection are reported (`trace.references.missing`). The host resolves
+     * keys to documents (`RAGQuery.resolveReferences`). Off by default.
+     */
+    references?: {
+      /** `'off'` (default) or `'follow'`. `RAGQuery.references` overrides it. */
+      mode?: 'off' | 'follow';
+      /** Most cited documents searched per query. Default: 3. */
+      maxTargets?: number;
+      /** Passages searched per cited document. Default: 3. */
+      perTarget?: number;
+      /** Built-in patterns (annexes, laws, decrees, circulars, resolutions; es/en/pt). Default: true. */
+      builtin?: boolean;
+      /** Additional patterns: `{ kind, pattern }`, one capture group for the identifier. */
+      patterns?: { kind: string; pattern: string }[];
+    };
+    /**
      * OCR of scanned documents at ingestion: PDF pages without a text layer
      * and images are recognised with Tesseract in a worker thread (needs the
      * optional dependency `tesseract.js` and the language data in `langPath`).
@@ -1217,6 +1237,22 @@ function validate(cfg: SDKConfig): void {
     );
   }
   validateVectorStore(cfg.rag);
+  const refs = cfg.rag.references;
+  if (refs !== undefined) {
+    if (refs.mode !== undefined && refs.mode !== 'off' && refs.mode !== 'follow') {
+      throw new ConfigError("rag.references.mode must be 'off' or 'follow'", 'rag.references.mode');
+    }
+    for (const p of refs.patterns ?? []) {
+      try {
+        new RegExp(p.pattern, 'u');
+      } catch (err) {
+        throw new ConfigError(
+          `rag.references.patterns: invalid pattern for '${p.kind}': ${err instanceof Error ? err.message : String(err)}`,
+          'rag.references.patterns',
+        );
+      }
+    }
+  }
   const lx = cfg.rag.lexicon;
   if (lx !== undefined) {
     if (lx.stopWordsMode !== undefined && !['auto', 'native', 'query'].includes(lx.stopWordsMode)) {

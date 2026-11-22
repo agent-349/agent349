@@ -127,6 +127,7 @@ import { HyDERewriter } from '../rag/queryRewriting/HyDERewriter.js';
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { StopWords, parseGlossary } from '../rag/lexicon/Lexicon.js';
+import { ReferenceExtractor } from '../rag/references/ReferenceExtractor.js';
 import { QueryExpander } from '../rag/queryRewriting/QueryExpander.js';
 import type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from '../rag/RAGPipeline.js';
 import type { QueryRewriter } from '../rag/queryRewriting/QueryRewriter.js';
@@ -2433,6 +2434,21 @@ export class Orchestrator {
       {
         ...this.#buildQueryExpansion(ragCfg.queryExpansion),
         lexicon: this.#buildLexicon(ragCfg.lexicon),
+        references: {
+          mode: ragCfg.references?.mode ?? 'off',
+          ...(ragCfg.references?.maxTargets !== undefined && {
+            maxTargets: ragCfg.references.maxTargets,
+          }),
+          ...(ragCfg.references?.perTarget !== undefined && {
+            perTarget: ragCfg.references.perTarget,
+          }),
+          extractor: new ReferenceExtractor({
+            ...(ragCfg.references?.builtin !== undefined && { builtin: ragCfg.references.builtin }),
+            ...(ragCfg.references?.patterns !== undefined && {
+              patterns: ragCfg.references.patterns,
+            }),
+          }),
+        },
       },
     );
 

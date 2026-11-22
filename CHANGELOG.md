@@ -72,6 +72,19 @@ series, incompatible behavior changes bump the minor version.
 
 ### Added
 
+- **Cross-document references.** `rag.references` (`mode: 'off' | 'follow'`,
+  `maxTargets`, `perTarget`, `builtin`, `patterns`): the passages that reach
+  the context are scanned for references to other documents
+  (`ReferenceExtractor`: annexes, laws, decrees, circulars, resolutions in
+  es/en/pt, normalised to keys like `annex:14`, plus custom patterns); the
+  host resolves keys to documentIds (`RAGQuery.resolveReferences`,
+  `createRAGTool(..., { references })`); each cited document is searched with
+  the same question and query vector (security filters only) and what passes
+  the re-ranker and `minScore` joins the result. `trace.references` lists the
+  references followed and the cited documents missing from the collection;
+  `metrics.referencesLatencyMs`; audited as `rag.references.end`.
+  `ReferenceExtractor.identify(title)` gives a document's identity keys.
+
 - **OCR of scanned documents.** `OcrService` extracts the text of PDFs and
   images off the host's event loop: a worker thread reads the text layer of
   each page, renders the pages with fewer than `minChars` characters and

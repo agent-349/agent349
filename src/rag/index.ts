@@ -52,6 +52,12 @@ export type {
 } from './ocr/OcrService.js';
 export { createVisionRecognizer } from './ocr/visionRecognizer.js';
 export { ImageLoader } from './ingestion/loaders/ImageLoader.js';
+export { ReferenceExtractor } from './references/ReferenceExtractor.js';
+export type {
+  ReferenceExtractorOptions,
+  ReferencePattern,
+  ExtractedReference,
+} from './references/ReferenceExtractor.js';
 export type { VisionRecognizerOptions } from './ocr/visionRecognizer.js';
 export {
   StopWords,
@@ -70,7 +76,11 @@ export type {
 } from './queryRewriting/QueryExpander.js';
 export { HyDERewriter } from './queryRewriting/HyDERewriter.js';
 export { RAGPipeline } from './RAGPipeline.js';
-export type { RAGPipelineExpansionOptions, RAGPipelineLexiconOptions } from './RAGPipeline.js';
+export type {
+  RAGPipelineExpansionOptions,
+  RAGPipelineLexiconOptions,
+  RAGPipelineReferenceOptions,
+} from './RAGPipeline.js';
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';
 export { RAGFacade } from './RAGFacade.js';
