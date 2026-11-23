@@ -6,6 +6,44 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+### Added
+
+- **Document identity from the heading and, optionally, from a model.**
+  `orch.rag.identifyDocument({ title, text })` returns which norm a document
+  is: from its title, then from the heading of its text — the first
+  reference that opens a line before the preamble ("VISTO", "CONSIDERANDO",
+  "WHEREAS", "Vu", "Auf Grund"…) and the first article — and, when neither
+  gives one and `rag.legal.identity.llm.mode` is `fallback`, from a model.
+  Each identity carries its source (`title`, `header`, `llm`); a heading that
+  names another norm of a kind the title gives is reported in `conflicts`
+  (the title wins). New: `ReferenceExtractor.selfDesignation()` and
+  `identifyDocument()`, `DocumentIdentifier`, preamble words in every
+  language pack (`rag.legal.preamble` adds more), `rag.legal.identity`
+  (`header`, `llm`), and the `documentIdentifier` role in `validateModels()`.
+
+### Fixed
+
+- **Dotted identifiers that are not thousands collapsed to their first
+  part.** "Circular 21.0070" and "Circular 21.0213" both became
+  `circular:21`, because the dot was read as a thousands separator and the
+  identifier was cut when the next group did not have three digits. A dotted
+  number is now read as thousands only when it has that shape ("19.889" →
+  `19889`); otherwise it is a compound number without leading zeros
+  ("21.0070" → `21.70`, "2024.15" → `2024.15`).
+
+### Changed
+
+- **The default status instruction of `buildContextGuidance` covers identity
+  notes and keeps the context layout private.** It tells the synthesis that a
+  citation of the norm named in a document's identity note refers to that
+  document, and not to mention the status line or how the context is laid
+  out in the answer.
+- **`ReferenceExtractor.identify(title, text)` reads the heading, not the
+  first 300 characters.** It used to take every reference at the beginning of
+  the text when the title had none, so a norm cited in a preamble became the
+  document's identity. It now uses `identifyDocument()`: the heading's own
+  designation only, also added when the title gives other kinds.
+
 ## [0.6.0] - 2026-11-22
 
 ### Fixed

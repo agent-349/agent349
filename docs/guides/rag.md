@@ -247,9 +247,9 @@ from the legal language profile (see _Legal languages_ below).
 
 The SDK has no registry of your documents, so the host maps keys to
 documentIds with `RAGQuery.resolveReferences` (or `createRAGTool(..., {
-references })` in agentic mode). `ReferenceExtractor.identify(title)` gives the
-keys that identify a document ("2 - ANEXO II - Decreto 120-15" → `annex:2`,
-`decree:120/2015`) for that registry. The searches of cited documents keep the
+references })` in agentic mode). `orch.rag.identifyDocument({ title, text })`
+gives the keys that identify a document for that registry (see _Document
+identity_ below). The searches of cited documents keep the
 tenant and role filters and drop the rest of the scope (tags, categories): a
 reference made by the document applies whatever the user filtered, never past
 the ACL.
@@ -261,6 +261,53 @@ default on when references or relations are on; a host that rewrites chunk
 tags must keep them). `rag.legal.numberedTitles: true` makes a title like
 "30 - ANEXO - Formularios" identify `annex:30` — a heuristic for collections that
 number their annexes in file names, off by default.
+
+#### Document identity
+
+A reference or a relation reaches a document only if the document's own
+identity — which norm it is — is known. `orch.rag.identifyDocument({ title,
+text })` reads it from three sources, in order:
+
+1. **The title** (or file name): its references ("2 - ANEXO II - Decreto
+   120-15.pdf" → `annex:2`, `decree:120/2015`).
+2. **The heading of the text**: the first reference that opens a line at the
+   beginning of the document ("DECRETO N° 120/015", "Real Decreto 123/2020,
+   de…", "Décret n° 2004-374 du…"), before the preamble and the first article.
+   Norms cited after the preamble ("VISTO: …la Ley 17.001", "Having regard
+   to…", "Vu…", "Auf Grund…") are other documents, never the identity. When a
+   heading line names an annex, the document is that annex. The heading adds
+   kinds the title does not give; for a kind the title already gives with
+   another identifier, the title wins and the disagreement is returned in
+   `conflicts`, for a person to review.
+3. **A model** (`rag.legal.identity.llm`, off by default): only when the
+   title and the heading give nothing — a scanned norm uploaded as
+   "scan_0012.pdf". One call per unidentified document, limited to the kinds
+   of the legal profile and normalised by it.
+
+```typescript
+const text = 'DECRETO N° 120/015\nVISTO: lo dispuesto por la Ley N° 17.001;\n…';
+const id = await orch.rag.identifyDocument({ title: 'scan_0012.pdf', text });
+// { keys: ['decree:120/2015'],
+//   identities: [{ key: 'decree:120/2015', label: 'DECRETO N° 120/015', source: 'header' }],
+//   conflicts: [] }
+```
+
+Each identity carries its `source` (`title`, `header` or `llm`). A model can
+be wrong: treat an `llm` identity as a proposal — use it to match references
+and propose relations, not to confirm them automatically. Hosts that let an
+editor declare the identity explicitly should let it replace the deduced one.
+`ReferenceExtractor.identifyDocument()` and `selfDesignation()` give the
+rule-based part without a model; `validateModels()` probes the model as role
+`documentIdentifier` when its mode is `fallback`.
+
+When the identity is not visible in the title (declared by an editor, read
+from the heading or from a model), return it from `describeDocuments` as
+`identity: ['Circular N° 77/2023']`. Each passage of the document then carries
+an `identity` note ("This document is Circular N° 77/2023."), and the default
+status instruction of `buildContextGuidance` tells the synthesis that a
+citation of that norm elsewhere refers to this document — without it, a
+passage that cites "Circular 77/2023" and the circular itself, titled
+"Holiday hours.docx", look unrelated to the model.
 
 The missing documents are data in the trace; `buildContextGuidance(result)`
 turns them (and the status notes below) into instructions for the synthesis,
@@ -357,6 +404,11 @@ conventions of those traditions; check them against your documents.
     "packs": ["es", "pt", "en", "fr", "it", "de"],
     "yearPivot": 30,
     "numberedTitles": false,
+    "preamble": ["fundamentos"],
+    "identity": {
+      "header": true,
+      "llm": { "mode": "off", "llmProvider": "openai", "model": "gpt-6-luna", "maxChars": 2000 }
+    },
     "references": [{ "kind": "policy", "words": ["pol[ií]tica", "policy"] }],
     "relations": [{ "type": "derogates", "words": ["se\\s+deja\\s+sin\\s+vigor"] }],
     "structure": { "article": ["cl[aá]usula"], "repealed": ["sin\\s+vigor"] }
@@ -367,6 +419,12 @@ conventions of those traditions; check them against your documents.
 - `packs` restricts the built-in packs.
 - `yearPivot`: two-digit years up to it read as 20YY, above as 19YY (default:
   the current two-digit year + 1).
+- `preamble`: more words that open a preamble or enacting formula (line
+  start), merged with the packs'. The document's own designation is read
+  before them.
+- `identity.header` (default `true`) reads the identity from the heading;
+  `identity.llm` configures the model fallback (`mode`: `off` or `fallback`;
+  `llmProvider`, `model`, `reasoningEffort`, `maxChars`, `timeoutMs`).
 - `references`, `relations`, `structure`: the installation's own words
   (regular-expression fragments, case-insensitive) — kinds of norms, operative
   verbs, heading words, repeal and wording markers, internal-reference words.

@@ -56,7 +56,15 @@ export { ReferenceExtractor } from './references/ReferenceExtractor.js';
 export type {
   ReferenceExtractorOptions,
   ExtractedReference,
+  DocumentIdentity,
+  IdentifyDocumentOptions,
+  IdentitySource,
 } from './references/ReferenceExtractor.js';
+export { DocumentIdentifier } from './references/DocumentIdentifier.js';
+export type {
+  DocumentIdentifierOptions,
+  ModelIdentityResult,
+} from './references/DocumentIdentifier.js';
 export { RelationExtractor } from './references/RelationExtractor.js';
 export type {
   RelationExtractorOptions,
@@ -82,7 +90,11 @@ export type {
 } from './verification/AnswerVerifier.js';
 export { StructureParser, sectionTags, internalReferenceTag } from './structure/StructureParser.js';
 export { LegalProfile, defaultLegalProfile } from './legal/LegalProfile.js';
-export type { LegalConfig, LegalReferenceConfig } from './legal/LegalProfile.js';
+export type {
+  LegalConfig,
+  LegalIdentityConfig,
+  LegalReferenceConfig,
+} from './legal/LegalProfile.js';
 export { LEGAL_PACKS, LEGAL_LANGUAGES } from './legal/packs.js';
 export type { LegalPack } from './legal/packs.js';
 export type { DocumentSection, InternalReference } from './structure/StructureParser.js';
@@ -122,7 +134,11 @@ export type {
 export { createRAGTool } from './RAGTool.js';
 export type { RAGToolDefaults, RAGToolOptions } from './RAGTool.js';
 export { RAGFacade } from './RAGFacade.js';
-export type { RAGFacadeEmbeddingDefaults } from './RAGFacade.js';
+export type {
+  RAGFacadeEmbeddingDefaults,
+  RAGFacadeIdentification,
+  DocumentIdentityResult,
+} from './RAGFacade.js';
 export type { RerankerValidation } from './types.js';
 
 // Ingestion

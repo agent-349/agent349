@@ -20,6 +20,33 @@ export interface ExtractedReference {
   count: number;
 }
 
+/** Where an identity of a document comes from. */
+export type IdentitySource = 'title' | 'header';
+
+/** The identity of a document, from its title and the heading of its text. */
+export interface DocumentIdentity {
+  /** Identity keys, title first. */
+  keys: string[];
+  /** Each key with its label and source. */
+  identities: { key: string; label: string; source: IdentitySource }[];
+  /**
+   * The heading names another document of a kind the title already gives
+   * ("Decreto 120/2015" in the title, "Decreto 200/2016" in the heading). The
+   * title wins; the heading's key is reported here for review.
+   */
+  conflicts: { title: string; header: string; headerLabel: string }[];
+}
+
+/** Options of {@link ReferenceExtractor.identifyDocument}. */
+export interface IdentifyDocumentOptions {
+  /** Read the heading of the text. Default: `rag.legal.identity.header` (true). */
+  header?: boolean;
+}
+
+/** Characters and non-empty lines of the beginning of a text searched for the document's own designation. */
+const HEADING_CHARS = 1500;
+const HEADING_LINES = 30;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ReferenceExtractor
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,6 +76,11 @@ export class ReferenceExtractor {
    * @param text - Any text (a passage, a whole document).
    */
   extract(text: string): ExtractedReference[] {
+    return this.#scan(text).map(({ key, label, count }) => ({ key, label, count }));
+  }
+
+  /** References with the position of their first occurrence, in order. */
+  #scan(text: string): (ExtractedReference & { at: number })[] {
     const found = new Map<string, ExtractedReference & { at: number }>();
     const taken: [number, number][] = [];
     for (const ref of this.profile.references) {
@@ -67,9 +99,7 @@ export class ReferenceExtractor {
         else found.set(key, { key, label: m[0].replace(/\s+/g, ' ').trim(), count: 1, at });
       }
     }
-    return [...found.values()]
-      .sort((a, b) => a.at - b.at)
-      .map(({ key, label, count }) => ({ key, label, count }));
+    return [...found.values()].sort((a, b) => a.at - b.at);
   }
 
   #identifier(ref: LegalProfile['references'][number], m: RegExpMatchArray): string | undefined {
@@ -98,27 +128,98 @@ export class ReferenceExtractor {
   }
 
   /**
-   * The identity keys of a document: the references in its title (e.g.
-   * "2 - ANEXO II - Decreto 120-15.pdf" → `annex:2`, `decree:120/2015`). When
-   * the title has none: with `rag.legal.numberedTitles`, a numbered annex
-   * title ("30 - ANEXO - …") gives `annex:30`; otherwise the beginning of its
-   * text (its heading) is used.
+   * The document's own designation, read from the beginning of its text: the
+   * first reference that opens a heading line ("DECRETO N° 120/015", "Real
+   * Decreto 123/2020, de 5 de junio…", "Décret n° 2004-374 du…"), before the
+   * preamble ("VISTO", "CONSIDERANDO", "WHEREAS", "Vu"…) and the first
+   * article. References inside a line, or after the preamble, are citations
+   * of other norms and are ignored. When a heading line names an annex, the
+   * document is that annex (its other heading lines name the norm it belongs
+   * to), so only the annex is returned.
+   *
+   * @param text - Document text (only its beginning is read).
+   * @returns At most one designation.
+   */
+  selfDesignation(text: string): { key: string; label: string }[] {
+    const lines = text.slice(0, HEADING_CHARS).split(/\r?\n/);
+    const found: { key: string; label: string }[] = [];
+    let seen = 0;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line === '') continue;
+      if (++seen > HEADING_LINES) break;
+      if (this.profile.preamble.test(line) || this.profile.articleLine.test(line)) break;
+      const lead = /^[^\p{L}\d§]*/u.exec(line)![0].length;
+      const first = this.#scan(line)[0];
+      if (first !== undefined && first.at <= lead)
+        found.push({ key: first.key, label: first.label });
+    }
+    const annex = found.find((f) => f.key.startsWith('annex:'));
+    if (annex !== undefined) return [annex];
+    return found.slice(0, 1);
+  }
+
+  /**
+   * The identity of a document. The title (or file name) comes first: its
+   * references ("2 - ANEXO II - Decreto 120-15.pdf" → `annex:2`,
+   * `decree:120/2015`), or, with `rag.legal.numberedTitles`, a numbered
+   * annex title ("30 - ANEXO - …" → `annex:30`). Then the heading of the
+   * text ({@link selfDesignation}), unless `rag.legal.identity.header` is
+   * false: it adds a kind the title does not give; for a kind the title
+   * already gives with another identifier, the title wins and the
+   * disagreement is reported in `conflicts`.
    *
    * @param title - Document title or file name.
-   * @param text  - Optional document text; only its first 300 characters are read.
+   * @param text  - Optional document text; only its beginning is read.
+   */
+  identifyDocument(
+    title: string,
+    text?: string,
+    options: IdentifyDocumentOptions = {},
+  ): DocumentIdentity {
+    const identities: DocumentIdentity['identities'] = this.#fromTitle(title).map((r) => ({
+      ...r,
+      source: 'title' as const,
+    }));
+    const conflicts: DocumentIdentity['conflicts'] = [];
+    const header = options.header ?? this.profile.identityFromHeader;
+    if (header && text !== undefined && text !== '') {
+      const kind = (key: string): string => key.slice(0, key.indexOf(':'));
+      for (const h of this.selfDesignation(text)) {
+        if (identities.some((i) => i.key === h.key)) continue;
+        const same = identities.find((i) => kind(i.key) === kind(h.key));
+        if (same !== undefined) {
+          conflicts.push({ title: same.key, header: h.key, headerLabel: h.label });
+          continue;
+        }
+        identities.push({ ...h, source: 'header' });
+      }
+    }
+    return { keys: identities.map((i) => i.key), identities, conflicts };
+  }
+
+  /**
+   * The identity keys of a document ({@link identifyDocument}, keys only).
+   *
+   * @param title - Document title or file name.
+   * @param text  - Optional document text; only its beginning is read.
    */
   identify(title: string, text?: string): string[] {
+    return this.identifyDocument(title, text).keys;
+  }
+
+  #fromTitle(title: string): { key: string; label: string }[] {
     const clean = title.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_]+/g, ' ');
-    const fromTitle = this.extract(clean);
-    if (fromTitle.length > 0) return fromTitle.map((r) => r.key);
+    const refs = this.extract(clean);
+    if (refs.length > 0) return refs.map(({ key, label }) => ({ key, label }));
     if (this.profile.numberedTitles) {
       const numbered = new RegExp(
         String.raw`^\s*(\d{1,4})\s*[a-z]?\s*[-–—.]\s*(?:${this.profile.annexWords})(?![\p{L}])`,
         'iu',
       ).exec(clean);
-      if (numbered !== null) return [`annex:${Number(numbered[1])}`];
+      if (numbered !== null)
+        return [{ key: `annex:${Number(numbered[1])}`, label: numbered[0].trim() }];
     }
-    if (text === undefined) return [];
-    return this.extract(text.slice(0, 300)).map((r) => r.key);
+    return [];
   }
 }

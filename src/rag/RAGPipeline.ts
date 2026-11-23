@@ -1910,6 +1910,11 @@ export function notesFor(
     });
   }
   if (status === undefined) return notes;
+  const identity = (status.identity ?? []).filter((l) => l.trim() !== '');
+  if (identity.length > 0) {
+    const label = identity.join('; ');
+    notes.push({ kind: 'identity', label, text: `This document is ${label}.` });
+  }
   if (withValidity) {
     const to = isoDate(status.validTo);
     const from = isoDate(status.validFrom);
@@ -1959,7 +1964,7 @@ const GUIDANCE: ContextGuidanceTexts = {
   missingInstruction:
     'If the answer depends on any of them, say so explicitly and state that it is not available.',
   statusInstruction:
-    'Some passages carry a status line (validity, repeal, amendment). When you rely on such a passage, state its status in the answer (for example, that it was amended or is no longer in force), even if the related document does not change what you answer. Do not present repealed or expired content as current; where a later document amends or repeals a passage, follow the later one and say so; present unconfirmed changes as possible, not established. If passages give different versions or dates of the same rule, point out the discrepancy with its date and source instead of choosing silently.',
+    'Some passages carry a status line (validity, repeal, amendment, or which norm the document is). When you rely on such a passage, state its status in the answer (for example, that it was amended or is no longer in force), even if the related document does not change what you answer. Do not present repealed or expired content as current; where a later document amends or repeals a passage, follow the later one and say so; present unconfirmed changes as possible, not established. If passages give different versions or dates of the same rule, point out the discrepancy with its date and source instead of choosing silently. When a status line says which norm a document is, a citation of that norm elsewhere refers to that document. The status line is information for you: use what it says, but never mention the status line itself or how the context is laid out.',
 };
 
 /**

@@ -926,6 +926,18 @@ Las páginas de un PDF sin capa de texto y las imágenes se reconocen con Tesser
 
 Con `mode: 'follow'`, las citas de los fragmentos del contexto ("Anexo XIV", "Ley 12.345", "Decreto 120/15") se resuelven a documentos de la colección y se busca en ellos con la misma pregunta. Los documentos citados que no están se informan en `trace.references.missing`. Quien usa el SDK puede resolver las claves (`RAGQuery.resolveReferences`) o dejar que el SDK use las etiquetas `ref:` que escribe al ingerir.
 
+### Identidad de los documentos (`rag.legal.identity`)
+
+Una referencia o una relación llega a un documento sólo si se sabe qué norma es. `orch.rag.identifyDocument({ title, text })` la lee de tres fuentes, en orden:
+
+1. **El título** o nombre de archivo ("Decreto 120-15.pdf" → `decree:120/2015`).
+2. **El encabezado del texto:** la primera referencia que abre una línea al comienzo, antes del preámbulo ("VISTO", "CONSIDERANDO", "WHEREAS", "Vu", "Auf Grund"…) y del primer artículo. Las normas citadas en el preámbulo no son la identidad. Si una línea del encabezado nombra un anexo, el documento es ese anexo. Para un tipo que el título ya da con otro número, gana el título y la diferencia se devuelve en `conflicts`.
+3. **Un modelo** (`identity.llm`, apagado por defecto), sólo cuando lo anterior no dio nada. Una llamada por documento sin identificar, limitada a los tipos del perfil.
+
+Cada identidad indica su origen (`title`, `header`, `llm`). Lo deducido por un modelo conviene tratarlo como propuesta: sirve para emparejar, no para confirmar relaciones automáticamente.
+
+Si la identidad no se ve en el título (la declaró una persona, o salió del encabezado o de un modelo), conviene devolverla en `describeDocuments` como `identity: ['Circular N° 77/2023']`. Cada fragmento del documento lleva entonces una nota `identity`, y la instrucción de `buildContextGuidance` le indica a la síntesis que una cita de esa norma en otro fragmento se refiere a ese documento.
+
 ### Relaciones y vigencia (`rag.relations`, `rag.validity`)
 
 - **Relaciones:** un documento que deroga, modifica o reglamenta a otro ("Derógase el Decreto N° 732/019") se detecta como propuesta. Cuando el documento afectado llega al contexto, se busca también en el que lo cambia, y los dos fragmentos llevan una nota de estado.
@@ -938,7 +950,7 @@ Con `mode: 'follow'`, las citas de los fragmentos del contexto ("Anexo XIV", "Le
 
 ### Perfil de lenguaje jurídico (`rag.legal`)
 
-Referencias, relaciones y estructura leen el texto con paquetes por idioma: `es` (España y Latinoamérica), `pt` (Brasil y Portugal), `en` (EE. UU., Reino Unido, UE), `fr`, `it` y `de`. Todos están activos por defecto (`packs` los restringe). Cada instalación puede sumar sus palabras: tipos de norma, verbos, encabezados, marcas de derogación y redacción, remisiones internas. Los identificadores guardan el año en cuatro dígitos (`yearPivot` para los de dos) y reconocen número/año, año/número (UE, Francia), series ("A 7000"), bis/ter y citas codificadas (U.S.C., C.F.R., Pub. L., S.I.).
+Referencias, relaciones y estructura leen el texto con paquetes por idioma: `es` (España y Latinoamérica), `pt` (Brasil y Portugal), `en` (EE. UU., Reino Unido, UE), `fr`, `it` y `de`. Todos están activos por defecto (`packs` los restringe). Cada instalación puede sumar sus palabras: tipos de norma, verbos, encabezados, marcas de derogación y redacción, remisiones internas y palabras de preámbulo (`preamble`). Los identificadores guardan el año en cuatro dígitos (`yearPivot` para los de dos) y reconocen número/año, año/número (UE, Francia), series ("A 7000"), bis/ter y citas codificadas (U.S.C., C.F.R., Pub. L., S.I.).
 
 ### Verificación de respuestas (`rag.verification`)
 

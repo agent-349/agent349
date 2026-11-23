@@ -1953,4 +1953,32 @@ function validateLegal(legal: LegalConfig | undefined): void {
   for (const [k, ws] of Object.entries(legal.structure ?? {})) {
     (ws ?? []).forEach((w: string) => check(w, `${where}.structure.${k}`));
   }
+  (legal.preamble ?? []).forEach((w) => check(w, `${where}.preamble`));
+  const id = legal.identity;
+  if (id !== undefined) {
+    if (id.header !== undefined && typeof id.header !== 'boolean') {
+      throw new ConfigError(
+        `${where}.identity.header must be a boolean`,
+        `${where}.identity.header`,
+      );
+    }
+    const llm = id.llm;
+    if (llm !== undefined) {
+      if (llm.mode !== undefined && !['off', 'fallback'].includes(llm.mode)) {
+        throw new ConfigError(
+          `${where}.identity.llm.mode must be 'off' or 'fallback'`,
+          `${where}.identity.llm.mode`,
+        );
+      }
+      for (const k of ['maxChars', 'timeoutMs'] as const) {
+        const v = llm[k];
+        if (v !== undefined && (!Number.isFinite(v) || v <= 0)) {
+          throw new ConfigError(
+            `${where}.identity.llm.${k} must be a positive number`,
+            `${where}.identity.llm.${k}`,
+          );
+        }
+      }
+    }
+  }
 }

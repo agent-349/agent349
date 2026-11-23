@@ -10,6 +10,8 @@ import type { RAGQuery, RAGResult, RAGFilter, RerankerValidation } from './types
 import type { RAGPipeline } from './RAGPipeline.js';
 import type { IngestionPipeline } from './ingestion/IngestionPipeline.js';
 import type { CollectionManager } from './collections/CollectionManager.js';
+import type { ReferenceExtractor, DocumentIdentity } from './references/ReferenceExtractor.js';
+import type { DocumentIdentifier } from './references/DocumentIdentifier.js';
 import type {
   DocumentSource,
   IngestOptions,
@@ -50,18 +52,42 @@ export interface RAGFacadeEmbeddingDefaults {
   dimensions: number;
 }
 
+/** A document identity with its model fallback ({@link RAGFacade.identifyDocument}). */
+export interface DocumentIdentityResult extends Omit<DocumentIdentity, 'identities'> {
+  identities: { key: string; label: string; source: 'title' | 'header' | 'llm' }[];
+  /** The model fallback ran (`rag.legal.identity.llm.mode: 'fallback'` and nothing else found). */
+  model?: {
+    name: string;
+    latencyMs: number;
+    error?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+}
+
+/** Document identification pieces built from `rag.legal`. */
+export interface RAGFacadeIdentification {
+  references: ReferenceExtractor;
+  identifier?: DocumentIdentifier;
+  /** `rag.legal.identity.llm.mode`. */
+  llmMode: 'off' | 'fallback';
+}
+
 export class RAGFacade {
   readonly #ragPipeline: RAGPipeline;
   readonly #ingestion: IngestionPipeline;
   readonly #collections: CollectionManager;
   readonly #embeddingDefaults: RAGFacadeEmbeddingDefaults;
+  readonly #identification: RAGFacadeIdentification | undefined;
 
   constructor(
     ragPipeline: RAGPipeline,
     ingestionPipeline: IngestionPipeline,
     collectionManager: CollectionManager,
     embeddingDefaults?: RAGFacadeEmbeddingDefaults,
+    identification?: RAGFacadeIdentification,
   ) {
+    this.#identification = identification;
     this.#ragPipeline = ragPipeline;
     this.#ingestion = ingestionPipeline;
     this.#collections = collectionManager;
@@ -294,6 +320,66 @@ export class RAGFacade {
       ? embeddingModel.slice(embeddingProvider.length + 1)
       : embeddingModel;
     return this.#ragPipeline.validateEmbedding(embeddingProvider, model);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Document identity
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * The identity of a document — which norm it is — from its title and the
+   * heading of its text (`rag.legal`), and, when neither gives one and
+   * `rag.legal.identity.llm.mode` is `fallback`, from a model. Hosts store
+   * the keys with the document so that references and relations from other
+   * documents reach it. Never throws.
+   *
+   * @param input.title - Document title or file name.
+   * @param input.text  - Document text (only its beginning is read).
+   */
+  async identifyDocument(input: { title: string; text?: string }): Promise<DocumentIdentityResult> {
+    const id = this.#identification;
+    if (id === undefined) return { keys: [], identities: [], conflicts: [] };
+    const found = id.references.identifyDocument(input.title, input.text);
+    if (found.keys.length > 0 || id.llmMode !== 'fallback' || id.identifier === undefined) {
+      return found;
+    }
+    const r = await id.identifier.identify(input.title, input.text ?? '');
+    const model = {
+      name: r.model,
+      latencyMs: r.latencyMs,
+      ...(r.error !== undefined && { error: r.error }),
+      ...(r.inputTokens !== undefined && { inputTokens: r.inputTokens }),
+      ...(r.outputTokens !== undefined && { outputTokens: r.outputTokens }),
+    };
+    if (r.identity === undefined) return { ...found, model };
+    return {
+      keys: [r.identity.key],
+      identities: [{ ...r.identity, source: 'llm' }],
+      conflicts: [],
+      model,
+    };
+  }
+
+  /**
+   * Probes the model of `rag.legal.identity.llm` (only with `mode: 'fallback'`).
+   * Never throws.
+   */
+  async validateDocumentIdentifier(): Promise<ModelValidation> {
+    const id = this.#identification;
+    if (id?.identifier === undefined || id.llmMode !== 'fallback') {
+      return { role: 'documentIdentifier', configured: false, available: false };
+    }
+    const start = Date.now();
+    const probe = await id.identifier.validate();
+    return {
+      role: 'documentIdentifier',
+      configured: true,
+      provider: id.identifier.provider,
+      model: id.identifier.model,
+      available: probe.ok,
+      latencyMs: Date.now() - start,
+      ...(!probe.ok && { error: probe.error ?? 'the identification probe did not succeed' }),
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────

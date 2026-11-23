@@ -50,6 +50,13 @@ export interface LegalPack {
   relations: Record<RelationTypeName, string[]>;
   /** "parcialmente", "partially"… */
   partial: string[];
+  /**
+   * Line-start words that open the preamble or the enacting formula of a
+   * norm ("VISTO", "CONSIDERANDO", "WHEREAS", "VU", "Auf Grund"). The
+   * document's own designation comes before them; the norms cited after them
+   * are not its identity.
+   */
+  preamble: string[];
   /** Words naming an article-level unit in references ("artículo 5", "Section 5", "§ 5"). */
   articleWords: string[];
   structure: {
@@ -115,6 +122,20 @@ const ES: LegalPack = {
     regulates: ['regl[aá]m[eé]nta(?:n)?se', 'se\\s+reglamenta(?:n)?'],
   },
   partial: ['parcialmente'],
+  preamble: [
+    'vistos?',
+    'resultandos?',
+    'considerandos?',
+    'atento',
+    'por\\s+cuanto',
+    'en\\s+uso\\s+de',
+    'exposici[óo]n\\s+de\\s+motivos',
+    'pre[áa]mbulo',
+    'el\\s+(?:presidente|poder\\s+ejecutivo|senado|congreso)',
+    'la\\s+(?:presidenta|asamblea|junta|c[áa]mara)',
+    'decreta',
+    'resuelve',
+  ],
   articleWords: ['art[ií]culos?', 'arts?\\.'],
   structure: {
     article: ['art[ií]culo', 'art\\.'],
@@ -177,6 +198,16 @@ const PT: LegalPack = {
     regulates: ['regulamenta(?:m)?-se', 'fica(?:m)?\\s+regulamentad[oa]s?'],
   },
   partial: ['parcialmente', 'em\\s+parte'],
+  preamble: [
+    'considerando',
+    'tendo\\s+em\\s+vista',
+    'no\\s+uso\\s+d[ae]s?',
+    'fa[çc]o\\s+saber',
+    'o\\s+(?:presidente|congresso|governador|ministro)',
+    'a\\s+(?:presidenta|assembleia|diretoria)',
+    'decreta',
+    'resolve',
+  ],
   articleWords: ['artigos?', 'arts?\\.'],
   structure: {
     article: ['artigo', 'art\\.'],
@@ -257,6 +288,15 @@ const EN: LegalPack = {
     regulates: ['hereby\\s+(?:implements|regulates)', 'gives\\s+effect\\s+to'],
   },
   partial: ['partially', 'in\\s+part'],
+  preamble: [
+    'whereas',
+    'be\\s+it\\s+enacted',
+    'in\\s+exercise\\s+of',
+    'having\\s+regard\\s+to',
+    'now,?\\s+therefore',
+    'an\\s+act\\s+to',
+    'the\\s+(?:secretary\\s+of\\s+state|european\\s+parliament|board)',
+  ],
   articleWords: [
     'articles?',
     'sections?',
@@ -317,6 +357,14 @@ const FR: LegalPack = {
     regulates: ["pris\\s+pour\\s+l'application\\s+de"],
   },
   partial: ['partiellement'],
+  preamble: [
+    'vus?',
+    'consid[ée]rant',
+    'le\\s+(?:pr[ée]sident|premier\\s+ministre|ministre|conseil)',
+    "l['’]assembl[ée]e",
+    'd[ée]cr[èe]te',
+    'arr[êe]te',
+  ],
   articleWords: ['articles?', 'art\\.'],
   structure: {
     article: ['article', 'art\\.'],
@@ -360,6 +408,14 @@ const IT: LegalPack = {
     regulates: ['in\\s+attuazione\\s+d(?:el|ella|i)'],
   },
   partial: ['parzialmente'],
+  preamble: [
+    'vist[oi]',
+    'considerat[oi]',
+    'sulla\\s+proposta',
+    'il\\s+(?:presidente|ministro|consiglio)',
+    'emana',
+    'promulga',
+  ],
   articleWords: ['articol[oi]', 'artt?\\.'],
   structure: {
     article: ['articolo', 'art\\.'],
@@ -403,6 +459,14 @@ const DE: LegalPack = {
     regulates: ['zur\\s+durchf[üu]hrung\\s+d(?:es|er)'],
   },
   partial: ['teilweise'],
+  preamble: [
+    'auf\\s*grund',
+    'in\\s+erw[äa]gung',
+    'der\\s+(?:bundestag|bundesrat|landtag|nationalrat)\\s+hat',
+    'die\\s+bundesregierung',
+    'verordnet',
+    'beschlie[ßs]t',
+  ],
   articleWords: ['artikel', 'art\\.', '§§?'],
   structure: {
     article: ['artikel', 'art\\.'],

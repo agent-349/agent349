@@ -19,6 +19,36 @@ export interface LegalReferenceConfig {
   order?: IdOrder;
 }
 
+/**
+ * How a document's own identity is found (`rag.legal.identity`): which norm
+ * the document is, so that references and relations from other documents
+ * reach it.
+ */
+export interface LegalIdentityConfig {
+  /**
+   * Also read the document's own designation from the beginning of its text
+   * (the heading line before the preamble: "DECRETO N° 120/015", "Real
+   * Decreto 123/2020, de…"). The title wins over the heading for the same
+   * kind of reference. Default: true.
+   */
+  header?: boolean;
+  /**
+   * Ask a model for the designation when neither the title nor the heading
+   * gives one. Off by default; one call per unidentified document.
+   */
+  llm?: {
+    /** `off` (default) or `fallback`. */
+    mode?: 'off' | 'fallback';
+    llmProvider?: string;
+    model?: string;
+    reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+    /** Characters of the beginning of the text sent to the model. Default: 2000. */
+    maxChars?: number;
+    /** Abort after this many milliseconds. Default: 20000. */
+    timeoutMs?: number;
+  };
+}
+
 /** Legal language configuration (`rag.legal`). */
 export interface LegalConfig {
   /** Built-in language packs to use. Default: all (`es`, `pt`, `en`, `fr`, `it`, `de`). */
@@ -37,6 +67,10 @@ export interface LegalConfig {
   references?: LegalReferenceConfig[];
   /** Additional operative verbs. */
   relations?: { type: RelationTypeName; words: string[] }[];
+  /** Additional preamble words (regex fragments), merged with the packs'. */
+  preamble?: string[];
+  /** How a document's own identity is found. */
+  identity?: LegalIdentityConfig;
   /** Additional structure words (regex fragments), merged with the packs'. */
   structure?: {
     article?: string[];
@@ -76,11 +110,31 @@ const EU_MARK = '(?:UE|EU|CE|EC|EG|EWG|EEC|CEE)';
 export const NUM = String.raw`(?:(?:n(?:[°º]|o\.?|ro\.?|r\.?|\.º|[uú]m\.?)|n\.|n(?=\s+\d))\s*|#\s*)?`;
 
 /**
- * A norm identifier: an optional series letter ("A 7000"), a number with
- * optional thousands separators ("12.345"), an optional year or second
- * number ("120/15", "2016/679", "120-2015") and an optional bis/ter.
+ * The number of an identifier: thousands separators ("12.345", "1,234,567")
+ * or a dotted compound ("21.0070", "2024.15", "3.12.4").
  */
-const ID = String.raw`(?:[A-Z][\s-]?)?\d{1,5}(?:[.,]\d{3})*(?:\s*[/-]\s*\d{1,5})?(?:[\s-]?(?:bis|ter|quater))?`;
+const NUMBER = String.raw`\d{1,5}(?:(?:[.,]\d{3})+(?!\d|\.\d)|(?:\.\d{1,6})+)?`;
+
+/**
+ * A norm identifier: an optional series letter ("A 7000"), a number (see
+ * {@link NUMBER}), an optional year or second number ("120/15", "2016/679",
+ * "120-2015") and an optional bis/ter.
+ */
+const ID = String.raw`(?:[A-Z][\s-]?)?${NUMBER}(?:\s*[/-]\s*\d{1,5})?(?:[\s-]?(?:bis|ter|quater))?`;
+
+/**
+ * Canonical form of a number written with dots or commas: thousands
+ * separators are dropped when every group after the first has three digits
+ * and the first has one to three ("19.889" → `19889`); otherwise the dots
+ * separate the parts of a compound number, kept without leading zeros
+ * ("21.0070" → `21.70`, "2024.15" → `2024.15`).
+ */
+function canonicalNumber(raw: string): string | undefined {
+  if (/^\d{1,5}$/.test(raw)) return String(Number(raw));
+  if (/^\d{1,3}(?:[.,]\d{3})+$/.test(raw)) return String(Number(raw.replace(/[.,]/g, '')));
+  if (/^\d{1,5}(?:\.\d{1,6})+$/.test(raw)) return raw.split('.').map(Number).join('.');
+  return undefined;
+}
 
 const ROMAN_ID = String.raw`[IVXLCDM]{1,8}|\d{1,4}`;
 
@@ -100,6 +154,12 @@ export class LegalProfile {
   readonly references: CompiledReference[];
   readonly relationVerbs: { type: RelationTypeName; re: RegExp }[];
   readonly partial: RegExp;
+  /** A line that opens the preamble or enacting formula ("VISTO:", "WHEREAS,"). */
+  readonly preamble: RegExp;
+  /** A line that opens an article ("Artículo 1", "Art. 2º", "§ 3"). */
+  readonly articleLine: RegExp;
+  /** `rag.legal.identity.header` (default true). */
+  readonly identityFromHeader: boolean;
   /** "artículo 5", "arts. 5 y 7", "§ 5", "Section 5(a)" — group 1: the numbers. */
   readonly articleRef: RegExp;
   readonly structure: {
@@ -239,6 +299,10 @@ export class LegalProfile {
       `(?<![\\p{L}])(?:${alt(packs.flatMap((p) => p.partial)) || '(?!)'})(?![\\p{L}])`,
       'iu',
     );
+    const preamble =
+      alt([...packs.flatMap((p) => p.preamble), ...(config.preamble ?? [])]) || '(?!)';
+    this.preamble = new RegExp(String.raw`^\s*(?:${preamble})(?![\p{L}])`, 'iu');
+    this.identityFromHeader = config.identity?.header !== false;
     const articleWords = alt(packs.flatMap((p) => p.articleWords)) || '(?!)';
     this.#articleWords = articleWords;
     const num = String.raw`\d{1,4}[a-z]?(?:\.\d{1,3})*(?:\([a-z0-9]{1,3}\))*\s*[°º]?`;
@@ -268,12 +332,21 @@ export class LegalProfile {
       unitWords: alt([...(s.unitWords ?? []), ...pick('unitWords')]) || '(?!)',
       signAsParagraph: packs.some((p) => p.structure.sectionSign === 'paragraph'),
     };
+    this.articleLine = new RegExp(
+      String.raw`^\s*(?:(?:${this.structure.article})\s*(?:\d|${this.structure.sole}|${this.structure.first})|§\s*\d)`,
+      'iu',
+    );
     this.annexWords =
       alt(
         packs.flatMap((p) =>
           p.references.filter((r) => r.kind === 'annex').flatMap((r) => r.words),
         ),
       ) || '(?!)';
+  }
+
+  /** The kinds of reference this profile knows (`law`, `decree`, `annex`…, plus custom). */
+  kinds(): string[] {
+    return uniq(this.references.map((r) => r.kind));
   }
 
   /** Words naming an article-level unit in a reference (regex alternation). */
@@ -315,13 +388,24 @@ export class LegalProfile {
       suffix = `-${sx[1]!.toLowerCase()}`;
       s = s.slice(0, sx.index);
     }
-    const pair = /^(\d{1,5}(?:[.,]\d{3})*)\s*[/-]\s*(\d{1,5})$/.exec(s);
+    const pair = /^(\d{1,5}(?:[.,]\d{1,6})*)\s*[/-]\s*(\d{1,5})$/.exec(s);
     if (pair === null) {
-      if (!/^\d{1,5}(?:[.,]\d{3})*$/.test(s)) return undefined;
+      const n = canonicalNumber(s);
+      if (n === undefined) return undefined;
       const year = dateYear !== undefined ? `/${dateYear}` : '';
-      return `${series}${Number(s.replace(/[.,]/g, ''))}${year}${suffix}`;
+      return `${series}${n}${year}${suffix}`;
     }
-    let [a, b] = [pair[1]!.replace(/[.,]/g, ''), pair[2]!];
+    const first = canonicalNumber(pair[1]!);
+    if (first === undefined) return undefined;
+    // A compound first part ("21.0070/2021") keeps its form; the year/number
+    // checks below apply to plain numbers only.
+    if (first.includes('.')) {
+      const second = pair[2]!;
+      return second.length >= 2 && second.length <= 4
+        ? `${series}${first}/${this.year(second)}${suffix}`
+        : `${series}${first}-${Number(second)}${suffix}`;
+    }
+    let [a, b] = [first, pair[2]!];
     const isYear = (x: string): boolean => x.length === 4 && Number(x) >= 1800 && Number(x) <= 2199;
     // Year/number ("2016/679", "2018/293", "2018/5"): marked by the context
     // (EU), or by the shape — a four-digit year first, then a number that

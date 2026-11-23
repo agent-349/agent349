@@ -1639,6 +1639,13 @@ export interface DocumentStatus {
   priority?: 'high' | 'normal' | 'low';
   /** Relations other documents have to this one. */
   incoming?: IncomingRelation[];
+  /**
+   * Which norms the document is, when its title does not say so (an
+   * identity declared by an editor, or read from the heading): labels such
+   * as `'Circular N° 77/2023'`. Each passage carries an `identity` note, so
+   * the synthesis knows that a citation of that norm points to this document.
+   */
+  identity?: string[];
 }
 
 /** What a chunk covers, stored in `metadata.custom.section` at ingestion (`rag.structure`). */
@@ -1678,7 +1685,8 @@ export interface PassageNote {
     | 'regulated'
     | 'relation_source'
     | 'version'
-    | 'article_derogated';
+    | 'article_derogated'
+    | 'identity';
   /** For relation notes: `'proposed'` relations are possible, not established. */
   status?: 'proposed' | 'confirmed';
   /** The other document of a relation note. */
@@ -1974,7 +1982,14 @@ export interface QueryRewriterValidation {
  */
 export interface ModelValidation {
   /** What the model is used for. */
-  role: 'llm' | 'embedding' | 'reranker' | 'queryRewriter' | 'queryExpander' | 'verifier';
+  role:
+    | 'llm'
+    | 'embedding'
+    | 'reranker'
+    | 'queryRewriter'
+    | 'queryExpander'
+    | 'verifier'
+    | 'documentIdentifier';
   /** Whether this role is configured. An unconfigured role is not a failure. */
   configured: boolean;
   /** Provider name. */

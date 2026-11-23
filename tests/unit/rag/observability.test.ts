@@ -559,6 +559,7 @@ describe('Orchestrator.validateModels()', () => {
       'queryRewriter',
       'queryExpander',
       'verifier',
+      'documentIdentifier',
     ]);
     expect(report.models[0]).toMatchObject({
       provider: 'mock',

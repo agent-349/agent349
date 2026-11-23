@@ -303,3 +303,32 @@ describe('rag.legal', () => {
     expect(bad({ references: [{ kind: 'p', words: ['('] }] })).toThrow(/invalid pattern/);
   });
 });
+
+describe('dotted identifiers: thousands or compound', () => {
+  const x = new ReferenceExtractor();
+  const keys = (t: string): string[] => x.extract(t).map((r) => r.key);
+
+  it('three-digit groups are thousands separators', () => {
+    expect(keys('Ley 19.889.')).toEqual(['law:19889']);
+    expect(keys('Ley 19.889, de 2020')).toEqual(['law:19889']);
+    expect(keys('Act No. 12,345.')).toEqual(['law:12345']);
+    expect(keys('Decreto 12.345/2020')).toEqual(['decree:12345/2020']);
+  });
+
+  it('other groups make a compound number, without leading zeros', () => {
+    expect(keys('Circular 21.0070 - Inspecciones')).toEqual(['circular:21.70']);
+    expect(keys('según la Circular 21.70')).toEqual(['circular:21.70']);
+    expect(keys('Circular 25.0005')).toEqual(['circular:25.5']);
+    expect(keys('Circular 2024.15')).toEqual(['circular:2024.15']);
+    expect(keys('Resolución 1.234.5678')).toEqual(['resolution:1.234.5678']);
+    expect(keys('Circular 21.0070/2021')).toEqual(['circular:21.70/2021']);
+  });
+
+  it('distinct compound numbers no longer collapse to their first part', () => {
+    expect(keys('Circular 21.0070, Circular 21.0213 y Circular 21.0250')).toEqual([
+      'circular:21.70',
+      'circular:21.213',
+      'circular:21.250',
+    ]);
+  });
+});

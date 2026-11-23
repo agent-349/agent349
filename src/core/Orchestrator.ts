@@ -128,6 +128,7 @@ import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { StopWords, parseGlossary } from '../rag/lexicon/Lexicon.js';
 import { ReferenceExtractor } from '../rag/references/ReferenceExtractor.js';
+import { DocumentIdentifier } from '../rag/references/DocumentIdentifier.js';
 import { RelationExtractor } from '../rag/references/RelationExtractor.js';
 import { documentTags } from '../rag/references/documentTags.js';
 import { StructureParser } from '../rag/structure/StructureParser.js';
@@ -2330,6 +2331,7 @@ export class Orchestrator {
       });
       models.push(expander);
       models.push(await rag.pipeline.validateVerifier());
+      models.push(await rag.validateDocumentIdentifier());
     }
 
     // Announced retirements, from the pricing catalog: a model that answers
@@ -2354,7 +2356,10 @@ export class Orchestrator {
     // `rag.*.unavailable` events; only the roles probed here need one.
     for (const m of models) {
       if (
-        (m.role === 'llm' || m.role === 'embedding' || m.role === 'queryExpander') &&
+        (m.role === 'llm' ||
+          m.role === 'embedding' ||
+          m.role === 'queryExpander' ||
+          m.role === 'documentIdentifier') &&
         m.configured &&
         !m.available
       ) {
@@ -2538,11 +2543,36 @@ export class Orchestrator {
       this.#toolRegistry.register(ragTool);
     }
 
-    return new RAGFacade(ragPipeline, ingestionPipeline, collectionManager, {
-      embeddingProvider: ragCfg.embedding.defaultProvider,
-      embeddingModel: `${ragCfg.embedding.defaultProvider}/${ragCfg.embedding.defaultModel}`,
-      dimensions: ragCfg.embedding.defaultDimensions,
-    });
+    const idLlm = ragCfg.legal?.identity?.llm;
+    return new RAGFacade(
+      ragPipeline,
+      ingestionPipeline,
+      collectionManager,
+      {
+        embeddingProvider: ragCfg.embedding.defaultProvider,
+        embeddingModel: `${ragCfg.embedding.defaultProvider}/${ragCfg.embedding.defaultModel}`,
+        dimensions: ragCfg.embedding.defaultDimensions,
+      },
+      {
+        references: referenceExtractor,
+        llmMode: idLlm?.mode ?? 'off',
+        ...(idLlm !== undefined && {
+          identifier: new DocumentIdentifier(
+            this.#router,
+            idLlm.llmProvider ?? this.#config.llm.defaultProvider ?? 'claude',
+            idLlm.model ?? this.#config.llm.defaultModel ?? 'claude-haiku-4-5',
+            legalProfile,
+            {
+              ...(idLlm.reasoningEffort !== undefined && {
+                reasoningEffort: idLlm.reasoningEffort,
+              }),
+              ...(idLlm.maxChars !== undefined && { maxChars: idLlm.maxChars }),
+              ...(idLlm.timeoutMs !== undefined && { timeoutMs: idLlm.timeoutMs }),
+            },
+          ),
+        }),
+      },
+    );
   }
 
   #buildVectorStore(ragCfg: SDKConfig['rag']): VectorStoreAdapter {
