@@ -27,7 +27,12 @@ export interface VerificationPolicy {
 export interface AnswerVerifierOptions {
   /** Most claims checked per answer. Default: 12. */
   maxClaims?: number;
-  /** Characters of each passage sent to the verifier. Default: 1500. */
+  /**
+   * Characters of each passage sent to the verifier. Default: the whole
+   * passage — the verifier must see the same text the synthesis saw, or it
+   * flags as unsupported what is in the part it did not receive. Set it only
+   * to cap very long passages.
+   */
   maxPassageChars?: number;
   /** Reasoning effort of the verification call. Default `'low'`; `null` sends none. */
   reasoningEffort?: LLMRequest['reasoningEffort'] | null;
@@ -171,7 +176,7 @@ export class AnswerVerifier {
   readonly #provider: string;
   readonly #model: string;
   readonly #maxClaims: number;
-  readonly #maxPassageChars: number;
+  readonly #maxPassageChars: number | undefined;
   readonly #reasoningEffort: LLMRequest['reasoningEffort'] | null;
   readonly #timeoutMs: number;
 
@@ -190,7 +195,8 @@ export class AnswerVerifier {
     this.#provider = provider;
     this.#model = model;
     this.#maxClaims = Math.min(30, Math.max(1, Math.floor(options.maxClaims ?? 12)));
-    this.#maxPassageChars = Math.max(200, options.maxPassageChars ?? 1500);
+    this.#maxPassageChars =
+      options.maxPassageChars === undefined ? undefined : Math.max(200, options.maxPassageChars);
     this.#reasoningEffort = options.reasoningEffort === undefined ? 'low' : options.reasoningEffort;
     this.#timeoutMs = Math.max(1000, options.timeoutMs ?? 20000);
   }
@@ -323,7 +329,11 @@ export class AnswerVerifier {
         const head = [p.metadata.title ?? p.metadata.documentId, section]
           .filter(Boolean)
           .join(' — ');
-        return `[${i + 1}] ${head}\n${p.content.slice(0, this.#maxPassageChars)}`;
+        const body =
+          this.#maxPassageChars === undefined
+            ? p.content
+            : p.content.slice(0, this.#maxPassageChars);
+        return `[${i + 1}] ${head}\n${body}`;
       })
       .join('\n\n');
     const hint =
@@ -467,7 +477,7 @@ export interface VerificationTexts {
 const TEXTS: VerificationTexts = {
   repairHeading: 'A check of your previous answer against the passages found these problems:',
   repairInstruction:
-    'Answer again using only what the passages state. Leave out or correct every claim listed above; do not add figures, conditions or steps the passages do not contain. If the passages do not cover the case asked, say so.',
+    'Answer again using only what the passages state. Leave out or correct every claim listed above; do not add figures, conditions or steps the passages do not contain. If the passages do not cover the case asked, say so. Do not mention this review, the passages or how the context is laid out: answer as you normally would.',
   noticeUnsupported: 'Part of this answer could not be confirmed in the documents:',
   noticeNotApplicable: 'The documents found may not apply to this case:',
   noticeUncertain: 'Part of this answer is only partially supported by the documents:',

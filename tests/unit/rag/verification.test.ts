@@ -67,6 +67,37 @@ describe('unmatchedNumbers', () => {
 describe('AnswerVerifier', () => {
   const question = 'How do I file a claim?';
 
+  it('sends the whole passage by default, so a rule past the first 1,500 characters is seen', async () => {
+    const router = routerReplying(
+      json({ claims: [], applicability: { verdict: 'applies', reason: '' } }),
+    );
+    const long = passage(
+      'p9',
+      'Intro. '.repeat(300) +
+        'Footage may not be handed to anyone until the security advisers arrive.',
+    );
+    await new AnswerVerifier(router, 'p', 'm').verify({
+      question,
+      answer: 'Wait for the advisers.',
+      passages: [long],
+    });
+    const sent = (router.call.mock.calls[0]![0] as { messages: { content: string }[] }).messages[0]!
+      .content;
+    expect(long.content.length).toBeGreaterThan(2000);
+    expect(sent).toContain('until the security advisers arrive');
+    const capped = routerReplying(
+      json({ claims: [], applicability: { verdict: 'applies', reason: '' } }),
+    );
+    await new AnswerVerifier(capped, 'p', 'm', { maxPassageChars: 500 }).verify({
+      question,
+      answer: 'x',
+      passages: [long],
+    });
+    const sentCapped = (capped.call.mock.calls[0]![0] as { messages: { content: string }[] })
+      .messages[0]!.content;
+    expect(sentCapped).not.toContain('until the security advisers arrive');
+  });
+
   it('passes when every claim is supported and the passages apply', async () => {
     const router = routerReplying(
       json({
