@@ -6,6 +6,17 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-23
+
+### Fixed
+
+- **Compound identifiers written with a comma were cut at the comma.**
+  "Circular 21,0070" gave `circular:21`. A comma followed by digits that do
+  not form a thousands group now separates the parts of a compound number,
+  like a dot: "21,0070" and "21.0070" both give `circular:21.70`. Thousands
+  ("12,345", "1,234,567") and enumerations with a space after the comma
+  ("21, 22 y 23") are unchanged.
+
 ## [0.7.0] - 2026-11-23
 
 ### Added
@@ -722,7 +733,8 @@ guide (Spanish).
 - With local cross-encoders (TEI), latency grows linearly with `topK` and chunk
   size. Without a GPU it can exceed one second per candidate.
 
-[Unreleased]: https://github.com/agent-349/agent349/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/agent-349/agent349/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/agent-349/agent349/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/agent-349/agent349/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/agent-349/agent349/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/agent-349/agent349/releases/tag/v0.5.0
