@@ -111,9 +111,9 @@ export const NUM = String.raw`(?:(?:n(?:[°º]|o\.?|ro\.?|r\.?|\.º|[uú]m\.?)|n
 
 /**
  * The number of an identifier: thousands separators ("12.345", "1,234,567")
- * or a dotted compound ("21.0070", "2024.15", "3.12.4").
+ * or a compound written with dots or commas ("21.0070", "21,0070", "2024.15").
  */
-const NUMBER = String.raw`\d{1,5}(?:(?:[.,]\d{3})+(?!\d|\.\d)|(?:\.\d{1,6})+)?`;
+const NUMBER = String.raw`\d{1,5}(?:(?:[.,]\d{3})+(?!\d|[.,]\d)|(?:[.,]\d{1,6})+)?`;
 
 /**
  * A norm identifier: an optional series letter ("A 7000"), a number (see
@@ -125,14 +125,15 @@ const ID = String.raw`(?:[A-Z][\s-]?)?${NUMBER}(?:\s*[/-]\s*\d{1,5})?(?:[\s-]?(?
 /**
  * Canonical form of a number written with dots or commas: thousands
  * separators are dropped when every group after the first has three digits
- * and the first has one to three ("19.889" → `19889`); otherwise the dots
- * separate the parts of a compound number, kept without leading zeros
- * ("21.0070" → `21.70`, "2024.15" → `2024.15`).
+ * and the first has one to three ("19.889", "12,345" → `19889`, `12345`);
+ * otherwise the dots or commas separate the parts of a compound number, kept
+ * without leading zeros and always joined with a dot ("21.0070" and
+ * "21,0070" → `21.70`).
  */
 function canonicalNumber(raw: string): string | undefined {
   if (/^\d{1,5}$/.test(raw)) return String(Number(raw));
   if (/^\d{1,3}(?:[.,]\d{3})+$/.test(raw)) return String(Number(raw.replace(/[.,]/g, '')));
-  if (/^\d{1,5}(?:\.\d{1,6})+$/.test(raw)) return raw.split('.').map(Number).join('.');
+  if (/^\d{1,5}(?:[.,]\d{1,6})+$/.test(raw)) return raw.split(/[.,]/).map(Number).join('.');
   return undefined;
 }
 

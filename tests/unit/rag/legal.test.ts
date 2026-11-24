@@ -324,6 +324,15 @@ describe('dotted identifiers: thousands or compound', () => {
     expect(keys('Circular 21.0070/2021')).toEqual(['circular:21.70/2021']);
   });
 
+  it('a compound written with commas gives the same key as with dots', () => {
+    expect(keys('Circular 21,0070')).toEqual(['circular:21.70']);
+    expect(keys('Circular 21,0070/2021')).toEqual(['circular:21.70/2021']);
+    expect(keys('Circular 21,007')).toEqual(['circular:21007']);
+    expect(keys('Act 1,234,567')).toEqual(['law:1234567']);
+    // An enumeration with a space after the comma is not a compound.
+    expect(keys('Circular 21, 22 y 23')).toEqual(['circular:21']);
+  });
+
   it('distinct compound numbers no longer collapse to their first part', () => {
     expect(keys('Circular 21.0070, Circular 21.0213 y Circular 21.0250')).toEqual([
       'circular:21.70',
