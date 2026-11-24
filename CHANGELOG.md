@@ -6,6 +6,22 @@ series, incompatible behavior changes bump the minor version.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-24
+
+### Fixed
+
+- **The answer verifier saw only the first 1,500 characters of each
+  passage.** The synthesis received the whole passage, so a claim taken from
+  the rest of it was flagged as unsupported, and the policy repaired or
+  annotated a correct answer. `AnswerVerifier` now sends the whole passage
+  by default; `maxPassageChars` remains as an explicit cap.
+
+### Changed
+
+- **The default repair instruction asks not to mention the review, the
+  passages or the context layout**, so a repaired answer reads like any
+  other.
+
 ## [0.7.1] - 2026-11-23
 
 ### Fixed
@@ -733,7 +749,8 @@ guide (Spanish).
 - With local cross-encoders (TEI), latency grows linearly with `topK` and chunk
   size. Without a GPU it can exceed one second per candidate.
 
-[Unreleased]: https://github.com/agent-349/agent349/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/agent-349/agent349/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/agent-349/agent349/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/agent-349/agent349/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/agent-349/agent349/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/agent-349/agent349/compare/v0.5.0...v0.6.0

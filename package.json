@@ -1,6 +1,6 @@
 {
   "name": "agent349",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Enterprise-grade AI agent orchestration for Node.js: build, run and govern production AI agents with built-in ACL, audit, human-in-the-loop, RAG and multi-provider LLMs.",
   "keywords": [
     "ai",
